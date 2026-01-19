@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MASHA MOVIE APP</title>
+    <link rel="stylesheet" type="text/css" href="static/style.css">
+</head>
+
+<body>
+        <div class="wrap">
+            <div class="left-block">
+                <div class="top-section">
+                     <h2>Find out about your favorite movie!</h2>
+                    <hr>
+
+                    <p> Enter movie name (or its part): </p>
+                    <input type="text" id="movie_field"
+                        placeholder="Movie 43...">
+
+                    <button id="imdb_rating">Get IMDB Rating</button>
+
+                    <button id="lens_rating">Get MovieLens Rating</button>
+
+                    <button id="movie_info">Get Movie Info</button>
+
+                    <p id="left_area_upper"></p>
+                </div>
+
+                <div class="botom-section">
+                    <h2>Get personal recommendations</h2>
+                    <hr>
+
+                    <p> Enter user id on MovieLens </p>
+                    <input type="text" id="user_id_field"
+                        placeholder="5...">
+
+                    <button id="recommend">Get 5 recommendations</button>
+
+                    <p id="left_area_lower"></p>
+                </div>
+            </div>
+
+            <div class="right-block">
+                <h2>Best movies of all time!</h2>
+                <hr>
+
+                <p> All fields are optional :) </p>
+
+                <p> Enter number of movies to show: </p>
+                <input type="text" id="top_field">
+
+                <p> If you want, you can specify one genre: </p>
+                <p> Possible genres are (case-insensitive): <br> Action | Adventure | Animation |
+                    Children's | Comedy | Crime | Documentary | Drama | Fantasy |
+                    Film Noir | Horror | Musical | Mystery | Romance | Sci Fi |
+                    Thriller | War | Western | </p>
+                <input type="text" id="genre_field">
+
+                <p> If you want, you can specify release year: </p>
+                <input type="text" id="year_field">
+                <br>
+                <button id="top_rated">Get MovieLens TOP-rated movies </button>
+
+                <hr>
+                <p id="right_area"></p>
+            </div>
+        </div>
+
+    <script src="static/movies_script.js" async> </script>
+</body>
+
+</html>
