@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, PredefinedSplit
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer, \
@@ -44,7 +45,7 @@ def split(features_df: pd.DataFrame, ratings: pd.Series):
     X_train, X_test, ratings_train, ratings_test = train_test_split(
         features_df,
         ratings,
-        train_size=0.66,
+        train_size=0.8,
         random_state=42,
     )
 
@@ -106,11 +107,26 @@ def build_predictor():
         "regressor__metric": ["minkowski", "cosine"],
     }
 
+    params_searcher = GridSearchCV(
+        estimator=predictor_pipe,
+        param_grid=params,
+        scoring=recommender_scorer,
+        n_jobs=1,
+        cv=5,
+        verbose=3,
+    )
+
     return {
         "name": "KNN",
-        "estimator": predictor_pipe,
-        "parameters": params,
+        "estimator": params_searcher,
     }
+
+
+def make_split(X_train, X_validate, y_train, y_validate):
+    X_train_all = pd.concat([X_train, X_validate])
+    y_train_all = pd.concat([y_train, y_validate])
+    test_fold = np.full(X_train_all.shape[0], -1, dtype=np.int8)
+    test_fold[X_train.shape[0]:] = 0
 
 
 def _get_predicted_top(true_ratings, predicted_ratings):

@@ -32,6 +32,11 @@ TABLES_SCHEMAS = {
 }
 
 
+def load_raw_files():
+    url = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
+    
+
+
 def init_counter_table(db_conn: duckdb.DuckDBPyConnection):
     db_conn.execute("""
         CREATE TABLE IF NOT EXISTS rows_counter(

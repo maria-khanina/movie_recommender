@@ -6,7 +6,6 @@ import duckdb
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GridSearchCV, PredefinedSplit
 
 from logic.loader import load_table
 from logic.recommender import extract_df, select_features, split, \
@@ -33,39 +32,22 @@ def recommender():
         joblib.dump(splitted, DATASETS_PATH)
     
     @task
-    def train_save_model():
-        X_train, X_validate, _, \
-            y_train, y_validate, _ = joblib.load(DATASETS_PATH)
+    def build_fit_save_model():
+        X_train, _, _, y_train, _, _ = joblib.load(DATASETS_PATH)
         model = build_predictor()
-
-        X_train_all = pd.concat([X_train, X_validate])
-        y_train_all = pd.concat([y_train, y_validate])
-        test_fold = np.full(X_train_all.shape[0], -1, dtype=np.int8)
-        test_fold[X_train.shape[0]:] = 0
-
-        params_searcher = GridSearchCV(
-            estimator=model["estimator"],
-            param_grid=model["parameters"],
-            scoring=recommender_scorer,
-            n_jobs=1,
-            cv=PredefinedSplit(test_fold),
-            verbose=3,
-        )
-
-        params_searcher.fit(X_train_all, y_train_all)
+        model["estimator"].fit(X_train, y_train)
         today = datetime.now().date()
         models_dir = "/opt/airflow/data/models"
         os.makedirs(models_dir, exist_ok=True)
         model_path = models_dir + f"/{model["name"]}_{today}.joblib"
-        joblib.dump(params_searcher.best_estimator_, model_path)
+        joblib.dump(model.best_estimator_, model_path)
 
         return {
             "model_path": model_path,
-            "score": params_searcher.best_score_,
         }
     
     @task
-    def load_evaluate_model(recent_model):
+    def evaluate_model(recent_model):
         _, X_validate, X_test, _, \
             y_validate, y_test = joblib.load(DATASETS_PATH)
         recent_predictor = joblib.load(recent_model["model_path"])
@@ -106,7 +88,12 @@ def recommender():
                 X_validate,
                 y_validate,
             )
-            if best_model_score < recent_model["score"]:
+            recent_model_score = recommender_scorer(
+                recent_model,
+                X_validate,
+                y_validate,
+            )
+            if best_model_score < recent_model_score:
                 test_score = recommender_scorer(
                     recent_predictor, 
                     X_test, 
@@ -162,9 +149,9 @@ def recommender():
             )
     loading = load_data()
     splitting = prepare_data()
-    training = train_save_model()
+    training = build_fit_save_model()
     loading >> splitting >> training
-    evaluation = load_evaluate_model(training)
+    evaluation = evaluate_model(training)
     prepare_recommendations(evaluation)
 
 recommender()
