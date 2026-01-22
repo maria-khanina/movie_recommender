@@ -33,6 +33,7 @@ def log_movie_search(title, request, response, **kwargs):
         **kwargs
     })
 
+
 def log_top_search(filters, response):
     """Save top-n request and response to a database."""
     top_searched.insert_one({
