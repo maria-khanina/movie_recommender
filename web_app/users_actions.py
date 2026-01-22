@@ -1,3 +1,10 @@
+"""
+Title: Movie web app
+
+Author: Masha Khanina
+
+Description: Saving users' requests and movie app responses to a database.
+"""
 import os
 from datetime import datetime
 
@@ -17,6 +24,7 @@ top_searched = searches_db["tops_searched"]
 
 
 def log_movie_search(title, request, response, **kwargs):
+    """Save request to get rating/info about movies to a database."""
     movies_searched.insert_one({
         "timestamp": datetime.now().timestamp(),
         "title": title,
@@ -26,6 +34,7 @@ def log_movie_search(title, request, response, **kwargs):
     })
 
 def log_top_search(filters, response):
+    """Save top-n request and response to a database."""
     top_searched.insert_one({
         "timestamp": datetime.now().timestamp(),
         "response": response,

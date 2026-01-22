@@ -195,14 +195,14 @@ services:
         echo
         echo "Creating missing opt dirs if missing:"
         echo
-        mkdir -v -p /opt/airflow/{logs,dags,plugins,config,database,raw_files}
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config,database,files}
         echo
         echo "Airflow version:"
         /entrypoint airflow version
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,database,raw_files}
+        ls -la /opt/airflow/{logs,dags,plugins,config,database,files}
         echo
         echo "Running airflow config list to create default config file if missing."
         echo
@@ -210,7 +210,7 @@ services:
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,database,raw_files}
+        ls -la /opt/airflow/{logs,dags,plugins,config,database,files}
         echo
         echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
         echo
@@ -218,11 +218,11 @@ services:
         echo
         echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
         echo
-        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config,database,raw_files}
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config,database,files}
         echo
         echo "Files in shared volumes:"
         echo
-        ls -la /opt/airflow/{logs,dags,plugins,config,database,raw_files}
+        ls -la /opt/airflow/{logs,dags,plugins,config,database,files}
 
     # yamllint enable rule:line-length
     environment:
@@ -287,13 +287,14 @@ services:
     env_file:
        - .env
     volumes:
-       - ./data:/app/data
        - ./web_app:/app/code
+       - ./data:/app/data
+       - ./logic/loader.py:/app/code/loader.py
     environment:
        DB_PATH: /app/data/database.duckdb
        DB_SERVICE: users_logs_db
-       DB_USER: {$DB_USER:-mongo}
-       DB_PASSWORD: {$DB_PASSWORD:-mongo}
+       DB_USER: ${DB_USER:-mongo}
+       DB_PASSWORD: ${DB_PASSWORD:-mongo}
     ports:
       - 9000:9000
     healthcheck:

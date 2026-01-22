@@ -1,3 +1,10 @@
+"""
+Title: Movie web app
+
+Author: Masha Khanina
+
+Description: Module that provides different information about movies.
+"""
 from abc import ABC, abstractmethod
 import os
 
@@ -36,11 +43,13 @@ class ConfigurationError(ValueError):
 
 
 class MovieDataBase(ABC):
-    """Abstract class representing a database wih movies.
-    .get_movie_rating(Movie) method returns tuple with
-    movie title and rating from the database.
-    .get_movie_info(Movie) method returns json with information
-    about movie from the database."""
+    """
+        Abstract class representing a database wih movies.
+        .get_movie_rating(Movie) method returns tuple with
+        movie title and rating from the database.
+        .get_movie_info(Movie) method returns json with information
+        about movie from the database.
+    """
     def __init__(self, **flags):
         self._flags = flags
 
@@ -50,8 +59,10 @@ class MovieDataBase(ABC):
             target_movie: Movie,
             session: aiohttp.ClientSession | None = None,
     ) -> tuple[str, str]:
-        """For given movie, return tuple with movie title and
-         rating from the database."""
+        """
+            For given movie, return tuple with movie title and
+            rating from the database.
+        """
         pass
 
     @abstractmethod
@@ -60,8 +71,10 @@ class MovieDataBase(ABC):
             target_movie: Movie,
             session: aiohttp.ClientSession | None = None,
     ):
-        """For given movie, return json with information about it
-        from the database."""
+        """
+            For given movie, return json with information about it
+            from the database.
+        """
         pass
 
 
@@ -98,8 +111,10 @@ class OMDB(MovieDataBase):
 
 
 def _get_info_movie_lens() -> pd.DataFrame:
-    """Make pandas dataframe from MovieLens u.item file,
-    separate title from year."""
+    """
+        Make pandas dataframe from MovieLens u.item file,
+        separate title from year.
+    """
     movies_categories = [
         "movie_id", "title+year", "release_date",   
         "video_release_date", "imdb_url", "unknown",
@@ -110,7 +125,7 @@ def _get_info_movie_lens() -> pd.DataFrame:
         "thriller", "war", "western",
     ]
     movies_df = pd.read_table(
-        "/app/data/raw_files/u.item",
+        "/app/data/files/u.item",
         sep="|",
         names=movies_categories,
         index_col=False,
@@ -118,16 +133,18 @@ def _get_info_movie_lens() -> pd.DataFrame:
     )
     movies_df = movies_df.fillna("n/a")
 
-    title_pattern = r"(.+)(\s\()(.+)(\))"
-    labels = ["title", "space", "release_year", "brace"]
-    movies_df[labels] = movies_df["title+year"].str.extract(title_pattern)
-    movies_df = movies_df.drop(columns=["title+year", "space", "brace"])
+    title_pattern = r"(.+)\s\((\d+)\)"
+    movies_df[["title", "release_year"]] = \
+        movies_df["title+year"].str.extract(title_pattern)
+    movies_df = movies_df.drop(columns="title+year")
     return movies_df
 
 
 def _average_grades(grades_df: pd.DataFrame) -> pd.DataFrame:
-    """Extract average grade and amount of reviews for
-    each movie from given database with grades."""
+    """
+        Extract average grade and amount of reviews for
+        each movie from given database with grades.
+    """
     grades_df = grades_df.groupby("movie_id", as_index=False).agg(
         rating=("rating", "mean"),
         reviews=("rating", "sum"),
@@ -137,11 +154,13 @@ def _average_grades(grades_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _preprocess_data() -> pd.DataFrame:
-    """Make pandas dataframe with movies, their info, average
-     ratings and amount of reviews from MovieLens databases."""
+    """
+        Make pandas dataframe with movies, their info, average
+        ratings and amount of reviews from MovieLens databases.
+    """
     info_df = _get_info_movie_lens()
     grades_df = pd.read_table(
-        "/app/data/raw_files/u.data",
+        "/app/data/files/u.data",
         sep="\t",
         names=["movie_id", "rating"],
         index_col=False,
@@ -155,12 +174,13 @@ def _preprocess_data() -> pd.DataFrame:
 
 class MovieLens(MovieDataBase):
     """Class representing MovieLens movie database."""
-    _rated_df = _preprocess_data()
+    _rated_df = None
 
     @classmethod
     def _get_by_title(cls, target_movie: Movie) -> pd.DataFrame:
         """Return dataframe with 1 movie which title contains
         given movie's title and biggest amount of reviews."""
+        cls._rated_df = _preprocess_data()
         mask = cls._rated_df["title"].str.contains(
             target_movie.title, 
             na=False, 
@@ -195,8 +215,12 @@ class MovieLens(MovieDataBase):
 
     @classmethod
     def get_top_n(cls, n: int = 10, **filters) -> list[dict[str, str]]:
-        """Return json with n top-rated movies matching given filters
-        with at least REVIEWS_MIN reviews."""
+        """
+            Return json with n top-rated movies matching given filters
+            with at least REVIEWS_MIN reviews.
+        """
+        if cls._rated_df is None:
+            cls._rated_df = _preprocess_data()
         filtered_df = cls._rated_df.copy()
         for label, value in filters.items():
             filtered_df = filtered_df[filtered_df[label] == value]
@@ -206,11 +230,12 @@ class MovieLens(MovieDataBase):
 
 
 class Config:
-    """Class representing database.
-    Receive string representing database and optional flags
-    at instantiation. Flags are passed to database class.
-    Method .supported_databases() returns list of names
-    of accepted databases.
+    """
+        Class representing database.
+        Receive string representing database and optional flags
+        at instantiation. Flags are passed to database class.
+        Method .supported_databases() returns list of names
+        of accepted databases.
     """
     _supported_databases = {
         "omdb": OMDB,
@@ -231,8 +256,10 @@ class Config:
 
     @classmethod
     def supported_databases(cls) -> list[str]:
-        """Return list of databases names that
-        can be passed at instantiation."""
+        """
+            Return list of databases names that
+            can be passed at instantiation.
+        """
         return list(Config._supported_databases.keys())
 
 
@@ -241,8 +268,10 @@ async def get_rating(
         config: Config,
         session: aiohttp.ClientSession | None = None,
 ) -> tuple[str, str]:
-    """Return average rating of given movie on
-    given configuration's database."""
+    """
+        Return average rating of given movie on
+        given configuration's database.
+    """
     return await config.database.get_movie_rating(target_movie, session)
 
 
@@ -251,6 +280,8 @@ async def get_movie_info(
         config: Config,
         session: aiohttp.ClientSession | None = None,
 ):
-    """Return json representation of given movie
-    received from given configuration's database."""
+    """
+        Return json representation of given movie
+        received from given configuration's database.
+    """
     return await config.database.get_movie_info(target_movie, session)

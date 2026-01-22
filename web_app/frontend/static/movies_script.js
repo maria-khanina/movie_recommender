@@ -28,7 +28,16 @@ async function sendRecommendations() {
     });
 
     const titlesList = await response.json();
-    leftLowerResponse.innerHTML = `<li>${titlesList}</li>`;
+
+    if (titlesList.length === 0) {
+        leftLowerResponse.innerHTML = "<li>No recommendations found for this user.</li>";
+        return;
+    }
+
+    const listItems = titlesList.map(title => `
+        <li class="rec-item">${title}</li>
+    `);
+    leftLowerResponse.innerHTML = `<ul>${listItems.join('')}</ul>`;
 }
 
 async function sendRatingRequest(database) {
@@ -40,6 +49,10 @@ async function sendRatingRequest(database) {
     });
 
     const data = await response.json();
+    if (data === "unavailable") {
+        leftUpperResponse.innerHTML = "Try later";
+        return;
+    }
     leftUpperResponse.innerHTML = `Did you mean "${data.movie_title}"?<br>
                               Rating: ${data.rating}/10`;
 }
@@ -54,6 +67,11 @@ async function sendTopRequest() {
     });
 
     const moviesList = await response.json();
+    if (moviesList === "unavailable") {
+        rightResponse.innerHTML = "Try later";
+        return;
+    }
+
     const moviesDisplay = moviesList.map(movie =>
     {
         return `<li>
@@ -75,6 +93,10 @@ async function sendInfoRequest() {
     });
 
     const infoList = await response.json();
+    if (infoList === "unavailable") {
+        leftUpperResponse.innerHTML = "Try later";
+        return;
+    }
     const display = infoList.map(([label, value]) =>
     {
         return `<li>

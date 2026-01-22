@@ -1,11 +1,21 @@
-import os
+"""
+Title: Recommender
 
-import duckdb
+Author: Masha Khanina
+Reviewer: Nir Landerer
+
+Description: Module with specific implementations of functions used in
+recommender_dag module. Includes extracting features, splitting dataset,
+building model, and defining way to score the model.
+"""
+import os
+from typing import TypedDict
+
 import pandas as pd
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
-from sklearn.model_selection import GridSearchCV, PredefinedSplit
+from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer, \
@@ -13,22 +23,17 @@ from sklearn.preprocessing import OneHotEncoder, FunctionTransformer, \
 
 from logic.loader import GENRES
 
+
 GENRES.remove("unknown")
 
 
-def extract_df():
-    db_path = os.environ["DB_PATH"]
-    with duckdb.connect(db_path, read_only=True) as db_conn:
-        return db_conn.execute("""
-            SELECT ratings.user_id, ratings.movie_id, ratings.rating,
-            movies.*, users.* 
-            FROM ratings 
-                JOIN movies USING (movie_id) 
-                JOIN users USING (user_id)
-        """).df()
-
-
-def select_features(ratings_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+def extract_features(
+        ratings_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """
+        Return a dataframe with extracted features and a series with 
+        target ratings.
+    """
     ratings_df.set_index(keys=["movie_id", "user_id"], inplace=True)
     ratings_df["release_date"] = pd.to_datetime(ratings_df["release_date"])
     ratings_df["release_year"] = ratings_df["release_date"].dt.year
@@ -41,7 +46,11 @@ def select_features(ratings_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     return ratings_df[features], ratings_df["rating"]
 
 
-def split(features_df: pd.DataFrame, ratings: pd.Series):
+def split(
+        features_df: pd.DataFrame, 
+        ratings: pd.Series,
+):
+    """Split datasets on train, validate, and test."""
     X_train, X_test, ratings_train, ratings_test = train_test_split(
         features_df,
         ratings,
@@ -62,7 +71,17 @@ def split(features_df: pd.DataFrame, ratings: pd.Series):
     )
 
 
-def build_predictor():
+class ModelInfo(TypedDict):
+    name: str
+    description: str
+    estimator: GridSearchCV
+
+
+def build_predictor() -> ModelInfo:
+    """
+        Make ratings predictor from GridSearchCV which estimator
+        contains all needed preprocessing.
+    """
     year_scaler = Pipeline(
         steps=[
             ("log", FunctionTransformer(
@@ -118,18 +137,19 @@ def build_predictor():
 
     return {
         "name": "KNN",
+        "description": 
+            "KNN in space with next features:"
+            "user's age, gender, occupation, movie's genres, "
+            "log of release year and release month.",
         "estimator": params_searcher,
     }
 
 
-def make_split(X_train, X_validate, y_train, y_validate):
-    X_train_all = pd.concat([X_train, X_validate])
-    y_train_all = pd.concat([y_train, y_validate])
-    test_fold = np.full(X_train_all.shape[0], -1, dtype=np.int8)
-    test_fold[X_train.shape[0]:] = 0
-
-
 def _get_predicted_top(true_ratings, predicted_ratings):
+    """
+        Return dataframe with 5 movies for each user with highest
+        predicted ratings from all actually rated movies.
+    """
     df = pd.DataFrame(
         {
             "predicted_rating": predicted_ratings,
@@ -146,12 +166,22 @@ def _get_predicted_top(true_ratings, predicted_ratings):
 
 
 def _score_predictions(true_ratings, predicted_ratings):
+    """
+        Return lowest rating average user will see in 
+        recommendations based on predicted_ratings and only from
+        movies that appear in true_ratings index.
+    """
     return _get_predicted_top(
         true_ratings, predicted_ratings
     ).groupby(level="user_id")["real_rating"].min().mean()
 
 
 def recommender_scorer(estimator, X, y):
+    """
+        Score estimator according to the worst movie
+        average user will receive in recommendations made based
+        on estimator's predictions of ratings.
+    """
     predicted = estimator.predict(X)
     y = pd.Series(y, index=X.index)
     return _score_predictions(y, predicted)

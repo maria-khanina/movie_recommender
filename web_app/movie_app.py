@@ -1,4 +1,11 @@
-"""Module for movies site, answers on user's requests."""
+"""
+Title: Movie web app
+
+Author: Masha Khanina
+
+Description: Web application for learning about movies and
+getting personal recommendations.
+"""
 import os
 from typing import Any, Literal
 
@@ -38,7 +45,10 @@ def root():
 
 
 @app.get("/recommend/{user_id}")
-def recommend_movies(user_id: str):
+def recommend_movies(user_id: str) -> list[str]:
+    """
+        Return 5 titles of movies recommmended for given MovieLens user.
+    """
     if user_id == "":
         return ["Enter user id, please"]
     try:
@@ -62,15 +72,18 @@ def recommend_movies(user_id: str):
 async def get_rating(
         database: str, 
         title: str,
-) -> dict[Literal["movie_title", "rating"], str]:
+) -> dict[Literal["movie_title", "rating"], str] | Literal["unavailable"]:
     """Return rating of movie with given title on given database."""
-    real_movie = await _get_full_title_movie(title)
+    try:
+        real_movie = await _get_full_title_movie(title)
+    except FileNotFoundError:
+        return "unavailable"
+    
     rating = await movie_lookup.get_rating(
-        real_movie,
-        movie_lookup.Config(database),
-        app.state.session,
+            real_movie,
+            movie_lookup.Config(database),
+            app.state.session,
     )
-
     log_movie_search(
         title=title, 
         database=database, 
@@ -82,15 +95,14 @@ async def get_rating(
 
 @app.get("/movie_lens/top/")
 def get_top_n(
-        num_to_show: str = "", 
+        n: str = "", 
         genre: str = "", 
         release_year: str = ""
-):
-    """Return n top-rated movies with given genre and release_year
-      and at least 100 reviews on MovieLens.
-    If n isn't given, up to 10 movies are returned.
-    If genre isn't given, movies of all genres are returned.
-    If release_year isn't given, movies of all release years are returned."""
+) -> list[dict[str, str | int | float]] | Literal["unavailable"]:
+    """
+        Return n top-rated movies with given genre and release_year
+        and at least 100 reviews on MovieLens.
+    """
     filters = {}
 
     if genre:
@@ -98,34 +110,44 @@ def get_top_n(
     if release_year and release_year.strip():
         filters["release_year"] = release_year
     try:
-        num_to_show = int(num_to_show)
+        n = int(n)
     except ValueError:
-        num_to_show = 10
+        n = 10
 
-    response = movie_lookup.MovieLens.get_top_n(
-        n=num_to_show,
-        **filters,
-    )
+    try:
+        response = movie_lookup.MovieLens.get_top_n(
+            n=n,
+            **filters,
+        )
+    except FileNotFoundError:
+        return "unavailable"
 
     logged_response = [{
         "movie_id": top_movie["movie_id"], 
         "title": top_movie["title"]}
         for top_movie in response
     ]
-    log_top_search(filters | {"num_to_show": num_to_show}, logged_response)
+    log_top_search(filters | {"n": n}, logged_response)
     return response
 
 
 @app.get("/movies/{title}")
-async def get_info(title: str):
-    """Return list of (key, value) pairs representing information
-    about the movie received from MovieLens and OMDB."""
+async def get_info(
+    title: str,
+) -> list[tuple[str, str]] | Literal["unavailable"]:
+    """
+        Return list of (key, value) pairs representing information
+        about the movie received from MovieLens and OMDB.
+    """
     omdb_labels = ["RunTime", "Genre", "Director", "Writer", "Rated"]
     m_lens_labels = [
         "release_year", "release_date", "video_release_date",
         "imdb_url",
     ]
-    real_movie = await _get_full_title_movie(title)
+    try:
+        real_movie = await _get_full_title_movie(title)
+    except FileNotFoundError:
+        return "unavailable"
     movie_info = {"Title": real_movie.title}
     _add_info(
         movie_info,
@@ -155,6 +177,9 @@ async def get_info(title: str):
 
 
 async def _get_full_title_movie(title: str) -> movie_lookup.StrMovie:
+    """
+        Return a movie with full title fitting to the given partial title.
+    """
     init_movie = movie_lookup.StrMovie(title)
     movie_info = await movie_lookup.get_movie_info(
         init_movie,
@@ -180,8 +205,10 @@ def _add_info(
         labels: list[str],
         source_info: dict[str, Any]
 ) -> None:
-    """Add items from source_info to dest_info if item key is in
-    labels list."""
+    """
+        Add items from source_info to dest_info if item key is in
+        labels list.
+    """
     for label in labels:
         formatted_label = " ".join(label.split("_")).capitalize()
         try:
