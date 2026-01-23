@@ -289,7 +289,6 @@ services:
     volumes:
        - ./web_app:/app/code
        - ./data:/app/data
-       - ./logic/loader.py:/app/code/loader.py
     environment:
        DB_PATH: /app/data/database.duckdb
        DB_SERVICE: users_logs_db

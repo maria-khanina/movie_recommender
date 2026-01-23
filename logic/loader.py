@@ -49,7 +49,7 @@ TABLES_SCHEMAS = {
 def load_raw_files(dest_dir: str, url: str = ""):
     """Load MovieLens files with users, movies, and ratings."""
     os.makedirs(dest_dir, exist_ok=True)
-    temp_zip_dest = "/tmp/ml100k.zip"
+    temp_zip_dest = os.path.join(dest_dir, "archive.zip")
     if not url:
         url = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
     
@@ -63,6 +63,7 @@ def load_raw_files(dest_dir: str, url: str = ""):
             with zip_file.open(file_path) as src:
                 with open(os.path.join(dest_dir, file), "wb") as dest:
                     shutil.copyfileobj(src, dest)
+    os.remove(temp_zip_dest)
 
 
 def load_table(file_path: str, sep: str = "|"):
@@ -71,36 +72,21 @@ def load_table(file_path: str, sep: str = "|"):
         Fits for large files (1_000_000_000 rows).
     """
     db_path = os.environ["DB_PATH"]
-    chunk_size = int(os.environ["LOADING_DB_CHUNK_SIZE"])
     file_name = os.path.basename(file_path)
     table_scheme = TABLES_SCHEMAS[file_name]
+    table_name = table_scheme["table_name"]
+    columns = table_scheme["columns"]
 
     with duckdb.connect(db_path) as db_conn:
-        table_reader = pd.read_csv(
-            filepath_or_buffer=file_path,
-            sep=sep,
-            names=table_scheme["columns"],
-            chunksize=chunk_size,
-            encoding="latin-1",
-            encoding_errors="replace",
-        )
-        try:
-            first_chunk = next(table_reader)
-        except StopIteration:
-            return None
-        table_name = table_scheme["table_name"]
-        db_conn.execute(
-            f"DROP TABLE IF EXISTS {table_name}"
-        )
-        db_conn.execute(
-            f"CREATE TABLE {table_name} "
-            "AS SELECT * FROM first_chunk WHERE 1=0",
-        )
-        db_conn.execute(
-            f"INSERT INTO {table_name} SELECT * FROM first_chunk",
-        )
-        
-        for chunk in table_reader:
-            db_conn.execute(
-                f"INSERT INTO {table_name} SELECT * FROM chunk",
+        db_conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+        db_conn.execute(f"""
+            CREATE TABLE {table_name} AS
+            SELECT * FROM read_csv_auto(
+                '{file_path}',
+                delim='{sep}',
+                header=false,
+                column_names={columns},
+                encoding='latin-1',
+                parallel=True
             )
+        """)

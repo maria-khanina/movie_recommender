@@ -8,7 +8,6 @@ Description: Module with specific implementations of functions used in
 recommender_dag module. Includes extracting features, splitting dataset,
 building model, and defining way to score the model.
 """
-import os
 from typing import TypedDict
 
 import pandas as pd
@@ -117,7 +116,7 @@ def build_predictor() -> ModelInfo:
     predictor_pipe = Pipeline(
         steps=[
             ("preprocesor", preprocessor),
-            ("regressor", KNeighborsRegressor()),
+            ("regressor", KNeighborsRegressor(n_jobs=-1)),
         ]
     )
 
