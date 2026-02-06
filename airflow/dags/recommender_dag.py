@@ -25,7 +25,6 @@ from logic.recommender import extract_features, split, \
 
 DATASETS_PATH = "/opt/airflow/data/splitted_datasets.joblib"
 FILES_DIR = "/opt/airflow/data/files"
-FILE_SEPARATORS = {"u.user": "|", "u.item": "|", "u.data": "\t"}
 MODELS_DIR = "/opt/airflow/data/models"
 TOP_NUM = 5
 
