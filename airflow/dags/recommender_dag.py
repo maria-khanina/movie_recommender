@@ -23,6 +23,7 @@ from logic.recommender import extract_features, split, \
             build_predictor, recommender_scorer, GENRES
 
 
+DATASET = "1m"
 DATASETS_PATH = "/opt/airflow/data/splitted_datasets.joblib"
 FILES_DIR = "/opt/airflow/data/files"
 MODELS_DIR = "/opt/airflow/data/models"
@@ -147,7 +148,7 @@ def recommender():
     """Define recommender system tasks and their dependencies."""
     @task
     def load_files():
-        """Load u.user, u.data, u.item to local storage."""
+        """Load users, movies, ratings to local storage."""
         os.makedirs(FILES_DIR, exist_ok=True)
         load_raw_files(FILES_DIR)
 
@@ -158,7 +159,8 @@ def recommender():
             Fits for huge files.
         """
         load_table(
-            os.path.join(FILES_DIR, file_name), FILE_SEPARATORS[file_name],
+            os.path.join(FILES_DIR, file_name),
+            DATASET,
         )
 
     @task
