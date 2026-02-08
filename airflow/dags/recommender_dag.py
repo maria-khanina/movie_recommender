@@ -36,7 +36,7 @@ def _extract_df():
     with duckdb.connect(db_path, read_only=True) as db_conn:
         return db_conn.execute("""
             SELECT user_id, movie_id, rating, movies.*, users.*
-            FROM ratings 
+            FROM ratings
                 JOIN movies USING (movie_id) 
                 JOIN users USING (user_id)
         """).df()

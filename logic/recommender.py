@@ -26,7 +26,7 @@ from logic.loader import GENRES
 GENRES.remove("unknown")
 
 
-def extract_features(
+def extract_features_0(
         ratings_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """
@@ -45,28 +45,34 @@ def extract_features(
     return ratings_df[features], ratings_df["rating"]
 
 
+def extract_features(
+        ratings_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series]:
+    return ratings_df[["user_id", "movie_id"]], ratings_df["rating"]
+
+
 def split(
         features_df: pd.DataFrame, 
         ratings: pd.Series,
 ):
     """Split datasets on train, validate, and test."""
-    X_train, X_test, ratings_train, ratings_test = train_test_split(
+    X_train, X_test, y_train, y_test = train_test_split(
         features_df,
         ratings,
-        train_size=0.8,
+        train_size=0.99,
         random_state=42,
     )
 
-    X_validate, X_test, ratings_validate, ratings_test = train_test_split(
+    X_val, X_test, y_val, y_test = train_test_split(
         X_test,
-        ratings_test,
+        y_test,
         train_size=0.5,
         random_state=42,
     )
 
     return (
-        X_train, X_validate, X_test,
-        ratings_train, ratings_validate, ratings_test,
+        X_train, X_val, X_test,
+        y_train, y_val, y_test,
     )
 
 
