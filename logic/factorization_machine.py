@@ -2,8 +2,6 @@ from typing import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike
-import pandas as pd
-import seaborn as sns
 from sklearn.base import BaseEstimator
 from sklearn.metrics import root_mean_squared_error
 from sklearn.utils import check_X_y, check_array

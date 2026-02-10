@@ -20,14 +20,13 @@ from sklearn.model_selection import GridSearchCV, PredefinedSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-# from logic.factorization_machine import FactorizationMachine
-from factorization_machine import FactorizationMachine
+from logic.factorization_machine import FactorizationMachine
 
 
 def extract_features(
         ratings_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.Series]:
-    return ratings_df[["user_id", "movie_id"]], ratings_df["rating"]
+    return ratings_df.drop(columns="rating"), ratings_df["rating"]
 
 
 def per_var_split_mask(
@@ -52,6 +51,7 @@ def per_var_temporal_split(
         test_ratio=0.01,
         test_min_per_var=10,
 ):
+    print(X.columns)
     sort_indices = X.sort_values(by=[var, time_col]).index
     X_sorted = X.loc[sort_indices]
     y_sorted = pd.Series(y, index=X.index).loc[sort_indices]

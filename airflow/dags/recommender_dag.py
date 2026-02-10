@@ -40,7 +40,7 @@ def _extract_df():
     db_path = os.environ["DB_PATH"]
     with duckdb.connect(db_path, read_only=True) as db_conn:
         return db_conn.execute("""
-            SELECT user_id, movie_id, rating, movies.*, users.*
+            SELECT ratings.*, movies.*, users.*
             FROM ratings
                 JOIN movies USING (movie_id) 
                 JOIN users USING (user_id)
@@ -114,7 +114,7 @@ def recommender():
     @task
     def load_files():
         """Load users, movies, ratings to local storage."""
-        load_raw_files(FILES_DIR)
+        load_raw_files(FILES_DIR, DATASET)
 
     @task
     def convert_to_table(file_name: str):
@@ -185,26 +185,23 @@ def recommender():
                     db_conn, best_table, recent_path, 
                     recent_model["description"], test_score, 
                 )
-                return True
             else:
-                if _compare_models(
+                _compare_models(
                     best_model, recent_model, recent_path,
                     X_val, y_val, test_score,
                     db_conn, best_table, 
-                ):
-                    return True
-        return False
+                )
 
     file_loading = load_files()
-    make_users = convert_to_table("u.user")
-    make_movies = convert_to_table("u.item")
-    make_ratings = convert_to_table("u.data")
+    make_users = convert_to_table("users.csv")
+    make_movies = convert_to_table("movies.csv")
+    make_ratings = convert_to_table("ratings.csv")
     file_loading >> [make_movies, make_ratings, make_users]
 
     splitting = prepare_data()
     training = build_fit_save_estimator()
     [make_movies, make_ratings, make_users] >> splitting >> training
 
-    evaluation = evaluate_model(training)
+    evaluate_model(training)
 
 recommender()
