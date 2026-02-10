@@ -170,19 +170,19 @@ def get_predicted_top(
 
         ids -- index consisting of pairs (user_id, movie_id) in right order.
     """
-    df = pd.DataFrame(
+    results_df = pd.DataFrame(
         {   
             "user_id": users,
             "predicted_rating": predicted_ratings,
             "real_rating": true_ratings,
         },
     )
-    df.sort_values(
+    results_df.sort_values(
         by=["user_id", "predicted_rating"],
         ascending=[True, False],
         inplace=True,
     )
-    return df.groupby("user_id").head(num_recommend)
+    return results_df.groupby("user_id").head(num_recommend)
 
 
 def mean_lowest_rating(
@@ -222,3 +222,28 @@ def mean_lowest_scorer(
         num_recommend,
         X["user_id"],
     )
+
+
+def calculate_dcg(results_df, gain, by: str, p):
+    rank = results_df.groupby("user_id")[by].\
+        rank(method="first", ascending=False)
+    discount = np.log(rank + 1)
+    all_dcgs = gain / discount
+    return all_dcgs * (rank <= p)
+
+
+def ndcg_p_score(y_true, y_pred, users, p=5):
+    results_df = pd.DataFrame({
+        "user_id": users,
+        "real_rating": y_true,
+        "predicted_rating": y_pred,
+    })
+
+    gain = 2**results_df["real_rating"] - 1
+    results_df["dcg"] = calculate_dcg(results_df, gain, "predicted_rating", p)
+    results_df["idcg"] = calculate_dcg(results_df, gain, "real_rating", p)
+
+    dcgs = results_df.groupby("user_id")[["dcg", "idcg"]].sum()
+    ndcg_per_user = dcgs["dcg"] / (dcgs["idcg"] + 1e-8)
+
+    return ndcg_per_user.mean()
