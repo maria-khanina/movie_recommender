@@ -20,7 +20,8 @@ from sklearn.model_selection import GridSearchCV, PredefinedSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-from logic.factorization_machine import FactorizationMachine
+# from logic.factorization_machine import FactorizationMachine
+from factorization_machine import FactorizationMachine
 
 
 def extract_features(
@@ -158,10 +159,10 @@ def build_fit_estimator(
 
 
 def get_predicted_top(
-        users: pd.Series,
         true_ratings: pd.Series, 
         predicted_ratings: ArrayLike,
-        recommended_num: int,
+        users: pd.Series,
+        num_recommend,
 ):
     """
         Return dataframe with 5 movies for each user with highest
@@ -181,14 +182,14 @@ def get_predicted_top(
         ascending=[True, False],
         inplace=True,
     )
-    return df.groupby("user_id").head(recommended_num)
+    return df.groupby("user_id").head(num_recommend)
 
 
 def mean_lowest_rating(
-        users: pd.Series,
         true_ratings: pd.Series,
         predicted_ratings: ArrayLike,
-        recommended_num=5,
+        users: pd.Series,
+        num_recommend,
 ):
     """
         Return lowest rating average user will see in 
@@ -196,18 +197,18 @@ def mean_lowest_rating(
         movies that appear in true_ratings index.
     """
     return get_predicted_top(
-        users,
         true_ratings,
         predicted_ratings,
-        recommended_num,
+        users,
+        num_recommend,
     ).groupby("user_id")["real_rating"].min().mean()
 
 
 def mean_lowest_scorer(
-        estimator: BaseEstimator, 
-        X: pd.DataFrame, 
-        y: ArrayLike,
-        recommended_num=5,
+        estimator, 
+        X,
+        y,
+        num_recommend=5,
 ):
     """
         Score estimator according to the worst movie
@@ -215,4 +216,9 @@ def mean_lowest_scorer(
         on estimator's predictions of ratings.
     """
     predicted = estimator.predict(X)
-    return mean_lowest_rating(X["user_id"], y, predicted, recommended_num)
+    return mean_lowest_rating(
+        y, 
+        predicted,
+        num_recommend,
+        X["user_id"],
+    )
