@@ -20,7 +20,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 
-from logic.loader import load_table, load_raw_files
 from logic.recommender_fm import split, find_best_estimator
 
 
@@ -29,9 +28,7 @@ supported_models = Literal["KNN", "FM"]
 
 CURR_MODEL: supported_models = "FM"
 DATASET: supported_datasets = "1m"
-DATASETS_PATH = "/opt/airflow/data/splitted_datasets.joblib"
-FILES_DIR = "/opt/airflow/data/files"
-MODELS_DIR = "/opt/airflow/data/models"
+DATA_DIR = "/opt/airflow/data"
 TOP_NUM = 5
 
 
@@ -47,11 +44,12 @@ def _extract_df():
         """).df()
 
 
-def _save_estimator(model_name: str, estimator: BaseEstimator):
+def _save_estimator(model_name: str, estimator):
+    models_dir = os.path.join(DATA_DIR, "models")
     today = datetime.now().date()
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(models_dir, exist_ok=True)
     file_name = f"{model_name}_{today}.joblib"
-    model_path = os.path.join(MODELS_DIR, file_name)
+    model_path = os.path.join(models_dir, file_name)
     joblib.dump(estimator, model_path)
     return model_path
 
@@ -89,25 +87,6 @@ def _update_table(
     )
 
 
-def _compare_models(
-        best_model, recent_model, recent_path,
-        X_val, y_val, test_score,
-        db_conn, best_table,
-):
-    best_model_val_score = mean_lowest_scorer(
-        best_model, X_val, y_val, TOP_NUM
-    )
-    recent_model_val_score = mean_lowest_scorer(
-        recent_model, X_val, y_val, TOP_NUM
-    )
-    if best_model_val_score < recent_model_val_score:
-        db_conn.execute("DELETE FROM best_model")
-        _update_table(
-            db_conn, best_table, recent_path, 
-            recent_model["description"], test_score, 
-        )
-
-
 @dag(start_date=datetime(2026, 1, 15), schedule='@weekly')
 def recommender():
     @task
@@ -117,42 +96,45 @@ def recommender():
         """
         ratings_df = _extract_df()
         features, ratings = ratings_df.drop(columns="rating"), ratings_df["rating"]
-        splitted = split(features, ratings)
-        joblib.dump(splitted, DATASETS_PATH)
+        train_all, test_all = split(features, ratings)
+        train_path = os.path.join(DATA_DIR, "train_set.joblib")
+        test_path = os.path.join(DATA_DIR, "test_set.joblib")
+        joblib.dump(train_all, train_path)
+        joblib.dump(test_all, test_path)
+        return train_path, test_path
 
     @task
-    def build_fit_save_estimator():
+    def build_fit_save_estimator(train_path: str):
         """
             Preprocess data, train model, and save it locally.
         """
-        X_train, X_val, X_outer_val, _, \
-            y_train, y_val, y_outer_val, _ = joblib.load(DATASETS_PATH)
-        model = find_best_estimator(X_train, X_val, y_train, y_val)
+        train_sets = joblib.load(train_path)
+        model = find_best_estimator(train_sets)
         model_path = _save_estimator(
             model["name"],
-            model["estimator"],
+            model["fitted_estimator"],
         )
 
         return {
             "path": model_path,
             "description": model["description"],
+            "val_score": model["val_score"],
         }
 
     @task
     def evaluate_model(
-        recent_model: dict[Literal["path", "description"], str],
+        recent_model_info: dict[Literal["path", "description", "val_score"], str],
+        test_path: str,
     ) -> bool:
         """
             Compare recent model with current best, add model metadata
             to all_models table. Return True if best model was updated
             and False otherwise.
         """
-        _, X_val, X_test, _, \
-            y_val, y_test = joblib.load(DATASETS_PATH)
-        recent_path = recent_model["path"]
-        test_score = mean_lowest_scorer(
-            joblib.load(recent_path), X_test, y_test, TOP_NUM,
-        )
+        X_test, y_test = joblib.load(test_path)
+        recent_path = recent_model_info["path"]
+        recent_model = joblib.load(recent_path)
+    
         with duckdb.connect(os.environ["DB_PATH"]) as db_conn:
             all_table, best_table = _make_models_tables(db_conn)
             _update_table(

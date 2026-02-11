@@ -98,9 +98,8 @@ def load_table(file_path: str, dataset_name: Literal["100k", "1m"]):
     sep = TABLES_SCHEMAS[table_name]["separator"][dataset_name]
 
     with duckdb.connect(db_path) as db_conn:
-        db_conn.execute(f"DROP TABLE IF EXISTS {table_name}")
         db_conn.execute(f"""
-            CREATE TABLE {table_name} AS
+            CREATE TABLE IF NOT EXISTS {table_name} AS
             SELECT * FROM read_csv_auto(
                 '{file_path}',
                 delim='{sep}',

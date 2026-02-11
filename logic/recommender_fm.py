@@ -88,8 +88,10 @@ def split(
         test_min_per_var=test_min_per_var,
     )
 
-    return X_train, X_val, X_outer_val, X_test, \
-        y_train, y_val, y_outer_val, y_test
+    train_all = X_train, X_val, X_outer_val, y_train, y_val, y_outer_val
+    test_all = X_test, y_test
+
+    return train_all, test_all
 
 
 class ModelInfo(TypedDict):
