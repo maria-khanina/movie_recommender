@@ -21,8 +21,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 
 from logic.loader import load_table, load_raw_files
-from logic.recommender_fm import extract_features, split, \
-            build_fit_estimator, mean_lowest_scorer
+from logic.recommender_fm import split, find_best_estimator
+
 
 supported_datasets = Literal["100k", "1m"]
 supported_models = Literal["KNN", "FM"]
@@ -110,30 +110,13 @@ def _compare_models(
 
 @dag(start_date=datetime(2026, 1, 15), schedule='@weekly')
 def recommender():
-    """Define recommender system tasks and their dependencies."""
-    @task
-    def load_files():
-        """Load users, movies, ratings to local storage."""
-        load_raw_files(FILES_DIR, DATASET)
-
-    @task
-    def convert_to_table(file_name: str):
-        """
-            Create SQL table with processed csv file.
-            Fits for huge files.
-        """
-        load_table(
-            os.path.join(FILES_DIR, file_name),
-            DATASET,
-        )
-
     @task
     def prepare_data():
         """
             Make training, validation, and test datasets.
         """
         ratings_df = _extract_df()
-        features, ratings = extract_features(ratings_df)
+        features, ratings = ratings_df.drop(columns="rating"), ratings_df["rating"]
         splitted = split(features, ratings)
         joblib.dump(splitted, DATASETS_PATH)
 
@@ -142,10 +125,11 @@ def recommender():
         """
             Preprocess data, train model, and save it locally.
         """
-        X_train, X_val, _, y_train, y_val, _ = joblib.load(DATASETS_PATH)
-        model = build_fit_estimator(X_train, X_val, y_train, y_val)
+        X_train, X_val, X_outer_val, _, \
+            y_train, y_val, y_outer_val, _ = joblib.load(DATASETS_PATH)
+        model = find_best_estimator(X_train, X_val, y_train, y_val)
         model_path = _save_estimator(
-            model["name"], 
+            model["name"],
             model["estimator"],
         )
 
