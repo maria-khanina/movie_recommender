@@ -18,15 +18,16 @@ from typing import Literal, TypedDict
 from airflow.sdk import dag, task
 import duckdb
 import joblib
+import numpy as np
 import pandas as pd
 
 from logic.recommender_fm import split, find_best_model, fit_model, \
                 count_baseline_score, FittedModel, ModelConfig
 
 
-DATA_DIR = "/opt/airflow/data"
-PRODUCTION_MODEL_PATH = os.path.join(DATA_DIR, "production_model.joblib")
-MODEL_TABLE = "ready_models"
+DATA_DIR = os.environ["DATA_DIR"]
+PRODUCTION_MODEL_PATH = os.path.join(DATA_DIR, os.environ["PRODUCTION_MODEL"])
+MODELS_TABLE = "ready_models"
 
 RECOMMEND_NUM = 5
 MAX_TEST_RATIO = 0.1
@@ -58,9 +59,9 @@ def _extract_df():
 def _save_model(model: FittedModel):
     """Download model to the storage."""
     models_dir = os.path.join(DATA_DIR, "models")
-    today = datetime.now().date()
+    time = datetime.today()
     os.makedirs(models_dir, exist_ok=True)
-    file_name = f"{model["name"]}_{today}.joblib"
+    file_name = f"{model["name"]}_{time}.joblib"
     model_path = os.path.join(models_dir, file_name)
     joblib.dump(model, model_path)
     return model_path
@@ -70,7 +71,7 @@ def _make_models_table():
     """Create table for recording fitted models."""
     with duckdb.connect(os.environ["DB_PATH"]) as db_conn:
         db_conn.execute(
-            f"CREATE TABLE IF NOT EXISTS {MODEL_TABLE} ("
+            f"CREATE TABLE IF NOT EXISTS {MODELS_TABLE} ("
             "model_path VARCHAR(200) PRIMARY KEY, " \
             "config VARCHAR(300), " \
             "test_score DOUBLE" \
@@ -86,7 +87,7 @@ def _update_table(
     """Add information about recent model to the database."""
     with duckdb.connect(os.environ["DB_PATH"]) as db_conn:
         db_conn.execute(
-            f"INSERT INTO {MODEL_TABLE} VALUES (?, ?, ?)",
+            f"INSERT INTO {MODELS_TABLE} VALUES (?, ?, ?)",
             [model_path, str(config), test_score]
         )
 

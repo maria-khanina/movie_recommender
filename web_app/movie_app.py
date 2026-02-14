@@ -6,7 +6,6 @@ Author: Masha Khanina
 Description: Web application for learning about movies and
 getting personal recommendations.
 """
-import os
 from typing import Any, Literal
 
 import aiohttp
@@ -18,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 
 import movie_lookup
+from recommendations import recommend
 from users_actions import log_movie_search, log_top_search
 
 
@@ -44,28 +44,22 @@ def root():
     return FileResponse("frontend/index.html")
 
 
-@app.get("/recommend/{user_id}")
-def recommend_movies(user_id: str) -> list[str]:
+@app.get("/recommend/{user_id}/{recommend_num}")
+def recommend_movies(user_id: str, recommend_num: str = "5") -> list[str]:
     """
-        Return 5 titles of movies recommmended for given MovieLens user.
+        Return recommend_num titles of movies recommmended for given MovieLens user.
     """
     if user_id == "":
         return ["Enter user id, please"]
     try:
         user_id = int(user_id)
+        recommend_num = int(recommend_num)
     except ValueError:
-        return ["Enter number, please"]
+        return ["Enter numbers, please"]
     try:
-        with duckdb.connect(os.environ["DB_PATH"], read_only=True) as db_conn:
-            results = db_conn.execute(
-                "SELECT title FROM recommendations WHERE user_id=?",
-                [user_id],
-            ).fetchall()
+        return recommend(user_id, recommend_num)
     except (duckdb.CatalogException, duckdb.IOException):
         return ["Recommendation isn't ready yet, try later."]
-
-    titles = [row[0] for row in results]
-    return titles
 
 
 @app.get("/{database}/{title}/rating")

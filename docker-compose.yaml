@@ -20,8 +20,6 @@ x-airflow-common:
 
     PYTHONPATH: /opt/airflow
 
-    DB_PATH: /opt/airflow/data/database.duckdb
-    LOADING_DB_CHUNK_SIZE: 100_000
   volumes:
     - ${AIRFLOW_PROJ_DIR:-./airflow}/dags:/opt/airflow/dags
     - ./logic:/opt/airflow/logic
@@ -276,7 +274,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${DB_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - db_actions:/app/data
+      - db_actions:/opt/airflow/data
   movie_app:
     build: .
     working_dir: /app/code
@@ -288,9 +286,9 @@ services:
        - .env
     volumes:
        - ./web_app:/app/code
-       - ./data:/app/data
+       - ./data:/opt/airflow/data
+       - ./logic:/app/code/logic
     environment:
-       DB_PATH: /app/data/database.duckdb
        DB_SERVICE: users_logs_db
        DB_USER: ${DB_USER:-mongo}
        DB_PASSWORD: ${DB_PASSWORD:-mongo}

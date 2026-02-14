@@ -1,5 +1,6 @@
 const movieField = document.getElementById("movie_field");
 const userField = document.getElementById("user_id_field");
+const numRecField = document.getElementById("num_recommend_field");
 const topField = document.getElementById("top_field");
 const genreField = document.getElementById("genre_field");
 const yearField = document.getElementById("year_field");
@@ -22,8 +23,9 @@ recommend.addEventListener("click", sendRecommendations);
 
 async function sendRecommendations() {
     const user_id = userField.value;
+    const recommend_num = numRecField.value;
 
-    const response = await fetch(`/recommend/${user_id}`, {
+    const response = await fetch(`/recommend/${user_id}/${recommend_num}`, {
         method: "GET",
     });
 
