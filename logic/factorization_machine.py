@@ -1,3 +1,15 @@
+"""
+Title: Factorization Machine
+
+Author: Masha Khanina
+Reviewer: Shani Gendelis
+
+Description: Implementation of Factorization Machine specialized for movies
+recommendations, includes cutom metrics to evaluate recommender quality.
+
+Infinity Labs R&D AI #5.
+"""
+
 from typing import Callable, Literal
 
 import numpy as np
@@ -32,8 +44,8 @@ def get_predicted_top(
         recommend_num,
 ):
     """
-        Return dataframe with 5 movies for each user with highest
-        predicted ratings from all actually rated movies.
+        Return dataframe with recommend_num movies for each user
+        with highest predicted ratings from movies rated in true_ratings.
     """
     results_df = make_results_df(true_ratings, predicted_ratings, users)
     results_df.sort_values(
@@ -126,8 +138,10 @@ class FactorizationMachine:
             random_state=None,
             verbose=False,
     ):
-        """"Class implementing factorization machine mostly for 
-        recommending movies to users based on movielens dataset."""
+        """"
+            Class implementing factorization machine mostly for 
+            recommending movies to users based on movielens dataset.
+        """
         self._init_loss(loss, dloss_dpred)
         self.metric = metric
         self._factors_num = factors_num
@@ -149,8 +163,10 @@ class FactorizationMachine:
             loss: str | Callable[[ArrayLike, ArrayLike], float], 
             dloss_dpred: array_func | None,
     ):
-        """Identify model's loss function and derivative
-        based on given parameters."""
+        """
+            Identify model's loss function and derivative
+            based on given parameters.
+        """
         if loss == "mse":
             self.loss = lambda y, y_pred: np.mean((y - y_pred) ** 2)
             self.dloss_dpred = lambda y, y_pred: 2 * (y_pred - y) / y.shape[0]
@@ -164,7 +180,10 @@ class FactorizationMachine:
             y: ArrayLike,
             rng: np.random.Generator,
     ) -> None:
-        """Initialize model's parameters: constant, linear weights, factors."""
+        """
+            Initialize model's parameters:
+            constant, linear weights, factors.
+        """
         self._w0 = np.mean(y)
         self._weights = np.zeros(shape=(dim,), dtype=float)
 
@@ -194,15 +213,19 @@ class FactorizationMachine:
             self._batch_update(X[batch_indices], y[batch_indices])
 
     def _update_coef(self, coef, grad, squared_grads):
-        """Move given coef in the direction opposite to 
-        its gradient with adapted learning rate."""
+        """
+            Move given coef in the direction opposite to
+            its gradient with adapted learning rate.
+        """
         squared_grads += np.square(grad)
         curr_learn_rate = self.learn_rate / np.sqrt(squared_grads + 1e-8)
         coef -= curr_learn_rate * grad
         return coef, squared_grads
 
     def _batch_update(self, X_batch, y_batch):
-        """Update model's parameters based on mini-batch gradient descent."""
+        """
+            Update model's parameters based on batch gradient descent.
+        """
         y_pred_batch, X_dot_factors = self._predict(X_batch)
         dloss_dpred = self.dloss_dpred(y_batch, y_pred_batch)
 
@@ -217,7 +240,8 @@ class FactorizationMachine:
             self._weights, weights_grad, self._squared_weight_grads,
         )
 
-        factor_coef_0 = X_batch.T @ (dloss_dpred[:, np.newaxis] * X_dot_factors)
+        factor_coef_0 = X_batch.T @ \
+            (dloss_dpred[:, np.newaxis] * X_dot_factors)
         factor_coef_1 = -(X_batch.T ** 2) @ dloss_dpred
         factors_grad = factor_coef_0 \
                         + factor_coef_1[:, np.newaxis] * self._factors \
