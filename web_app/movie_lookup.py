@@ -15,6 +15,7 @@ import pandas as pd
 
 
 REVIEWS_MIN = 100
+DATA_DIR = os.environ["DATA_DIR"]
 
 
 class Movie(ABC):
@@ -112,7 +113,7 @@ class OMDB(MovieDataBase):
 
 def _get_info_movie_lens() -> pd.DataFrame:
     """
-        Make pandas dataframe from MovieLens u.item file,
+        Make pandas dataframe from MovieLens movies file,
         separate title from year.
     """
     movies_categories = [
@@ -125,7 +126,7 @@ def _get_info_movie_lens() -> pd.DataFrame:
         "thriller", "war", "western",
     ]
     movies_df = pd.read_table(
-        "/app/data/files/u.item",
+        f"{DATA_DIR}/files/movies.csv",
         sep="|",
         names=movies_categories,
         index_col=False,
@@ -160,7 +161,7 @@ def _preprocess_data() -> pd.DataFrame:
     """
     info_df = _get_info_movie_lens()
     grades_df = pd.read_table(
-        "/app/data/files/u.data",
+        f"{DATA_DIR}/files/ratings.csv",
         sep="\t",
         names=["movie_id", "rating"],
         index_col=False,

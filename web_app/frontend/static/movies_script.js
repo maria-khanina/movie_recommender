@@ -2,7 +2,6 @@ const movieField = document.getElementById("movie_field");
 const userField = document.getElementById("user_id_field");
 const numRecField = document.getElementById("num_recommend_field");
 const topField = document.getElementById("top_field");
-const genreField = document.getElementById("genre_field");
 const yearField = document.getElementById("year_field");
 const getTop = document.getElementById("top_rated");
 const imdbRating = document.getElementById("imdb_rating");
@@ -61,10 +60,9 @@ async function sendRatingRequest(database) {
 
 async function sendTopRequest() {
     const n = topField.value;
-    const genre = genreField.value;
     const year = yearField.value.toString();
 
-    const response = await fetch(`/movie_lens/top/?n=${n}&genre=${genre}&release_year=${year}`, {
+    const response = await fetch(`/movie_lens/top/?n=${n}&release_year=${year}`, {
         method: "GET",
     });
 
@@ -83,7 +81,7 @@ async function sendTopRequest() {
                 </li>`;
     });
 
-    rightResponse.innerHTML = `Top-rated ${genre} movies with at least 100 reviews:
+    rightResponse.innerHTML = `Top-rated movies with at least 100 reviews:
                                 <ul>${moviesDisplay.join('')}</ul>`;
 }
 

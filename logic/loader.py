@@ -2,10 +2,12 @@
 Title: Loader
 
 Author: Masha Khanina
-Reviewer: Nir Landerer
+Reviewer: Shani Gendelis
 
 Description: Module for loading MovieLens files into storage and
 parsing them to database.
+
+Infinity Labs R&D AI #5.
 """
 import os
 from pathlib import Path
@@ -109,3 +111,12 @@ def load_table(file_path: str, dataset_name: Literal["100k", "1m"]):
                 parallel=True
             )
         """)
+
+
+if __name__ == "__main__":
+    DATASET = "1m"
+    FILES_DIR = os.path.join(os.environ["DATA_DIR"], "files")
+    load_raw_files(FILES_DIR, DATASET)
+    for table in TABLES_SCHEMAS:
+        csv_file = os.path.join(FILES_DIR, f"{table}.csv")
+        load_table(csv_file, DATASET)

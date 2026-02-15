@@ -90,17 +90,14 @@ async def get_rating(
 @app.get("/movie_lens/top/")
 def get_top_n(
         n: str = "", 
-        genre: str = "", 
         release_year: str = ""
 ) -> list[dict[str, str | int | float]] | Literal["unavailable"]:
     """
-        Return n top-rated movies with given genre and release_year
+        Return n top-rated movies with given release_year
         and at least 100 reviews on MovieLens.
     """
     filters = {}
 
-    if genre:
-        filters["_".join(genre.lower().split(" "))] = 1
     if release_year and release_year.strip():
         filters["release_year"] = release_year
     try:
