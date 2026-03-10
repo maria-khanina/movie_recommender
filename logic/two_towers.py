@@ -12,12 +12,11 @@ def build_mlp(
     layers = []
     curr_dim = input_dim
     
-    for ind, dim in enumerate(hidden_dims):
+    for dim in hidden_dims:
         layers.append(nn.Linear(curr_dim, dim))
         layers.append(nn.SiLU())
         layers.append(nn.BatchNorm1d(dim))
         layers.append(nn.Dropout(p=dropout_ratio))
-            
         curr_dim = dim
         
     layers.append(nn.Linear(curr_dim, output_dim))
@@ -31,13 +30,13 @@ class UserTower(nn.Module):
         ages_num: int,
         genders_num: int,
         jobs_num: int,
-        user_dim=16,
-        age_dim=3,
+        user_dim=32,
+        age_dim=4,
         gender_dim=2,
-        job_dim=4,
-        hidden_dims=[64, 32],
-        output_dim=16,
-        dropout_ratio=0.2,
+        job_dim=8,
+        hidden_dims=[128, 64],
+        output_dim=64,
+        dropout_ratio=0.1,
     ) -> None:
         super().__init__()
         
@@ -96,10 +95,10 @@ class MovieTower(nn.Module):
         self,
         movies_num: int,
         genres_num: int,
-        movie_dim=16,
-        genre_dim=4,
-        hidden_dims=[64, 32],
-        output_dim=16,
+        movie_dim=32,
+        genre_dim=8,
+        hidden_dims=[128, 64],
+        output_dim=64,
         dropout_ratio=0.1,
     ) -> None:
         super().__init__()

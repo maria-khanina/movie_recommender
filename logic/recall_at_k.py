@@ -1,8 +1,8 @@
 import torch
 import torch.nn.functional as F
 
-from logic.two_towers import TwoTowerModel
-from logic.recommender_dl import move_tensors
+from two_towers import TwoTowerModel
+from logic.retriever_workflow import move_tensors
 
 
 def get_all_movie_embeddings(
