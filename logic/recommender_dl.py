@@ -92,3 +92,46 @@ def per_var_temporal_split(
         test_min_per_var,
     )
     return X_sorted[~test_mask], X_sorted[test_mask]
+
+
+def train_val_split(
+    df: pd.DataFrame,
+    user_col: str = "user_id",
+    time_col: str = "timestamp",
+    cold_user_ratio: float = 0.05,
+    max_test_ratio: float = 0.1,
+    test_max_per_var: int = 8,
+    test_min_per_var: int = 3,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    
+    all_users = df[user_col].unique()
+    rng = np.random.default_rng(seed=random_state)
+    
+    cold_users_num = int(len(all_users) * cold_user_ratio)
+    cold_user_ids = rng.choice(
+        all_users,
+        size=cold_users_num,
+        replace=False,
+    )
+    
+    cold_mask = df[user_col].isin(cold_user_ids)
+    
+    cold_df = df[cold_mask].copy()
+    warm_df = df[~cold_mask].copy()
+    
+    train_warm, val_warm = per_var_temporal_split(
+        X=warm_df,
+        var=user_col,
+        time_col=time_col,
+        max_test_ratio=max_test_ratio,
+        test_max_per_var=test_max_per_var,
+        test_min_per_var=test_min_per_var,
+    )
+    
+    val_combined = pd.concat(
+        [val_warm, cold_df], 
+        ignore_index=True,
+    )
+    
+    return train_warm, val_combined
