@@ -1,40 +1,6 @@
-import copy
-from collections import defaultdict
-
-import duckdb
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import OrdinalEncoder
-from sklearn.metrics import ndcg_score
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-
-
-def build_mlp(
-        input_dim: int, 
-        hidden_dims: list[int],
-        output_dim: int,
-        dropout_ratio: float,
-) -> nn.Sequential:
-    layers = []
-    curr_dim = input_dim
-    
-    for ind, dim in enumerate(hidden_dims):
-        layers.append(nn.Linear(curr_dim, dim))
-        layers.append(nn.SiLU())
-        layers.append(nn.BatchNorm1d(dim))
-
-        if ind == 0:
-            layers.append(nn.Dropout(p=dropout_ratio))
-            
-        curr_dim = dim
-        
-    layers.append(nn.Linear(curr_dim, output_dim))
-    return nn.Sequential(*layers)
 
 
 def move_tensors(
@@ -94,31 +60,44 @@ def per_var_temporal_split(
     return X_sorted[~test_mask], X_sorted[test_mask]
 
 
-def train_val_split(
-    df: pd.DataFrame,
-    user_col: str = "user_id",
-    time_col: str = "timestamp",
-    cold_user_ratio: float = 0.05,
-    max_test_ratio: float = 0.1,
-    test_max_per_var: int = 8,
-    test_min_per_var: int = 3,
-    random_state: int = 42,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    
+def split_cold_warm(
+        df: pd.DataFrame,
+        user_col: str,
+        cold_user_ratio: float,
+        random_state: int,
+):
     all_users = df[user_col].unique()
     rng = np.random.default_rng(seed=random_state)
-    
+
     cold_users_num = int(len(all_users) * cold_user_ratio)
     cold_user_ids = rng.choice(
         all_users,
         size=cold_users_num,
         replace=False,
     )
-    
+
     cold_mask = df[user_col].isin(cold_user_ids)
-    
-    cold_df = df[cold_mask].copy()
-    warm_df = df[~cold_mask].copy()
+
+    return df[cold_mask].copy(), df[~cold_mask].copy()
+
+
+def train_val_split(
+    df: pd.DataFrame,
+    user_col="user_id",
+    time_col="timestamp",
+    cold_user_ratio=0.0,
+    max_test_ratio=0.1,
+    test_max_per_var=8,
+    test_min_per_var=3,
+    random_state=42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+    cold_df, warm_df = split_cold_warm(
+        df,
+        user_col,
+        cold_user_ratio,
+        random_state,
+    )
     
     train_warm, val_warm = per_var_temporal_split(
         X=warm_df,
@@ -128,10 +107,10 @@ def train_val_split(
         test_max_per_var=test_max_per_var,
         test_min_per_var=test_min_per_var,
     )
-    
+
     val_combined = pd.concat(
         [val_warm, cold_df], 
         ignore_index=True,
     )
-    
+
     return train_warm, val_combined
