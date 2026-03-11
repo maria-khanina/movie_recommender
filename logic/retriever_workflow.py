@@ -4,13 +4,12 @@ from typing import Callable
 import pandas as pd
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 import torch.optim as optim
 import torch.nn.functional as F
 
 from two_towers import TwoTowerModel
-from recall_at_k import recall_at_ks_macro, get_movie_embeddings, \
-                            get_user_embeddings
+from recall_at_k import recall_at_ks_macro
 
 
 def move_tensors(
@@ -286,26 +285,26 @@ def _run_retrieval_epoch(
     return epoch_loss / dataset_len
 
 
-def train_retriever(
+def train_retriever_validate(
     model: TwoTowerModel,
+    optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
     val_loader: DataLoader,
     all_movie_ids: torch.Tensor,
     all_genres: torch.Tensor,
     cold_user_ids: torch.Tensor,
     var_key_map: dict[str, str],
+    device: torch.device,
     embedding_loss: Callable,
-    epochs=10_000,
-    learning_rate=0.001,
-    patience=10,
-    tol=1e-4,
-    weight_decay=1e-4,
-    device_name="cpu",
-    recall_k=100,
+    epochs: int,
+    learning_rate: float,
+    patience: int,
+    tol: float,
+    weight_decay: float,
+    recall_k: int,
     **loss_kwargs,
 ) -> None:
-    
-    device = torch.device(device_name)
+
     model = model.to(device)
     
     optimizer = optim.AdamW(
@@ -318,7 +317,9 @@ def train_retriever(
     best_val_loss = np.inf
     no_improve_count = 0
     best_weights = None
+    best_epoch = -1
     
+    print("=== PHASE 1: Training with Validation ===")
     for epoch in range(epochs):
         avg_train_loss = _run_retrieval_epoch(
             model=model,
@@ -338,6 +339,7 @@ def train_retriever(
             device=device,
             is_train=False,
             embedding_loss=embedding_loss,
+            optimizer=optimizer,
             **loss_kwargs,
         )
 
@@ -365,6 +367,8 @@ def train_retriever(
                 model.state_dict(),
             )
 
+            best_epoch = epoch + 1
+
         if avg_val_loss < (best_val_loss - tol):
             best_val_loss = avg_val_loss
             no_improve_count = 0
@@ -377,6 +381,135 @@ def train_retriever(
     if best_weights is not None:
         model.load_state_dict(best_weights)
         print(
-            "Best weights restored. "
-            f"Validation recall@{recall_k}-micro is {best_val_recall:.4f}",
+            f"Best weights restored. Best validation recall@{recall_k}-macro "
+            f"is {best_val_recall:.4f} achieved at epoch {best_epoch}."
         )
+    
+    return best_weights
+
+
+def tune_retriever(
+    model: torch.nn.Module,
+    combined_loader: DataLoader,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    var_key_map: dict[str, str],
+    embedding_loss: Callable,
+    epochs: int,
+    tol: float,
+    patience=5,
+    **loss_kwargs,
+) -> dict:
+    
+    print("=== PHASE 2: Absorbing Validation Set ===")
+    
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = param_group["lr"] * 0.5 
+
+    best_loss = np.inf
+    no_improve_count = 0
+    best_weights = copy.deepcopy(model.state_dict())
+    
+    for epoch in range(epochs):
+        train_loss = _run_retrieval_epoch(
+            model=model,
+            dataloader=combined_loader,
+            var_key_map=var_key_map,
+            device=device,
+            is_train=True,
+            embedding_loss=embedding_loss,
+            optimizer=optimizer,
+            **loss_kwargs,
+        )
+        
+        print(f"Epoch {epoch+1}, train Loss: {train_loss:.4f}")
+        
+        if train_loss < best_loss - tol:
+            best_loss = train_loss
+            no_improve_count = 0
+            best_weights = copy.deepcopy(model.state_dict())
+        else:
+            no_improve_count += 1
+
+        if no_improve_count >= patience:
+            break
+
+    return best_weights
+
+
+def train_retriever(
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    all_movie_ids: torch.Tensor,
+    all_genres: torch.Tensor,
+    cold_user_ids: torch.Tensor,
+    var_key_map: dict[str, str],
+    embedding_loss: Callable,
+    epochs=10_000,
+    learning_rate=0.001,
+    patience=10,
+    tuning_patience=5,
+    tol=1e-4,
+    weight_decay=1e-4,
+    device_name="cpu",
+    recall_k=100,
+    **loss_kwargs,
+) -> None:
+    
+    device = torch.device(device_name)
+    model = model.to(device)
+    
+    optimizer = optim.AdamW(
+        model.parameters(), 
+        lr=learning_rate,
+        weight_decay=weight_decay,
+    )
+    
+    best_weights = train_retriever_validate(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        all_movie_ids=all_movie_ids,
+        all_genres=all_genres,
+        cold_user_ids=cold_user_ids,
+        var_key_map=var_key_map,
+        device=device,
+        embedding_loss=embedding_loss,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        tol=tol,
+        recall_k=recall_k,
+        **loss_kwargs,
+    )
+    
+    model.load_state_dict(best_weights)
+
+    combined_dataset = ConcatDataset(
+        [train_loader.dataset, val_loader.dataset]
+    )
+    
+    combined_loader = DataLoader(
+        dataset=combined_dataset,
+        batch_size=train_loader.batch_size,
+        shuffle=True, 
+        num_workers=train_loader.num_workers,
+    )
+
+    final_weights = tune_retriever(
+        model=model,
+        combined_loader=combined_loader,
+        optimizer=optimizer,
+        device=device,
+        var_key_map=var_key_map,
+        embedding_loss=embedding_loss,
+        epochs=epochs,
+        tol=tol,
+        patience=tuning_patience,
+        **loss_kwargs,
+    )
+
+    model.load_state_dict(final_weights)

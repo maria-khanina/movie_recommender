@@ -15,6 +15,7 @@ class PositiveRatings(Dataset):
         is_training=False,
         user_dropout=0.0,
         trained_users: torch.Tensor | None = None,
+        min_user_frequency=0,
     ) -> None:
         super().__init__()
         
@@ -29,9 +30,14 @@ class PositiveRatings(Dataset):
         )
 
         self.user_ids = self.real_user_ids.clone()
+        if is_training:
+            user_counts = torch.bincount(self.user_ids)
+            rare_users = user_counts[self.user_ids] < min_user_frequency
+            self.user_ids[rare_users] = 0
+
         if not is_training:
-            new_users_mask = ~torch.isin(self.user_ids, trained_users)
-            self.user_ids[new_users_mask] = 0
+            new_users = ~torch.isin(self.user_ids, trained_users)
+            self.user_ids[new_users] = 0
     
         self.movie_ids = torch.tensor(
             positive_df["movie_id"].values, 
