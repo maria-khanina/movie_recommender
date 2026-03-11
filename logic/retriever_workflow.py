@@ -4,11 +4,13 @@ from typing import Callable
 import pandas as pd
 import numpy as np
 import torch
-import torch.optim as optim
 from torch.utils.data import DataLoader
+import torch.optim as optim
+import torch.nn.functional as F
 
 from two_towers import TwoTowerModel
-from recall_at_k import recall_at_k_macro
+from recall_at_k import recall_at_ks_macro, get_movie_embeddings, \
+                            get_user_embeddings
 
 
 def move_tensors(
@@ -195,6 +197,41 @@ def get_unique_movies(
     return movie_ids, movie_genres
 
 
+def get_unique_users(
+    df: pd.DataFrame,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    
+    unique_users_df = df.drop_duplicates(
+        subset=["user_id"],
+    ).sort_values(
+        by="user_id",
+    ).reset_index(
+        drop=True,
+    )
+    
+    user_ids = torch.tensor(
+        unique_users_df["user_id"].values,
+        dtype=torch.long,
+    )
+    
+    ages = torch.tensor(
+        unique_users_df["age"].values,
+        dtype=torch.long,
+    )
+    
+    genders = torch.tensor(
+        unique_users_df["gender"].values,
+        dtype=torch.long,
+    )
+    
+    jobs = torch.tensor(
+        unique_users_df["occupation"].values,
+        dtype=torch.long,
+    )
+    
+    return user_ids, ages, genders, jobs
+
+
 def _run_retrieval_epoch(
     model: TwoTowerModel,
     dataloader: DataLoader[dict[str, torch.Tensor]],
@@ -294,7 +331,7 @@ def train_retriever(
             **loss_kwargs,
         )
 
-        val_recall = recall_at_k_macro(
+        val_recall = recall_at_ks_macro(
             two_towers=model,
             dataloader=val_loader,
             var_key_map=var_key_map,
@@ -302,8 +339,8 @@ def train_retriever(
             all_genres=all_genres,
             device=device,
             cold_user_ids=cold_user_ids,
-            k=recall_k,
-        )["global"]
+            k=[recall_k],
+        )[recall_k]["global"]
         
         print(
             f"Epoch {epoch+1}/{epochs}, "

@@ -74,3 +74,40 @@ class PositiveRatings(Dataset):
             "job": self.jobs[idx],
             "genre": self.genres[idx],
         }
+
+
+class Ratings(Dataset):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        genres_cols: list[str],
+        is_training=True,
+        user_dropout=0.05,
+    ) -> None:
+        self.user_ids = torch.tensor(df["user_id"].values, dtype=torch.long)
+        self.movie_ids = torch.tensor(df["movie_id"].values, dtype=torch.long)
+        self.ages = torch.tensor(df["age"].values, dtype=torch.long)
+        self.genders = torch.tensor(df["gender"].values, dtype=torch.long)
+        self.jobs = torch.tensor(df["occupation"].values, dtype=torch.long)
+        self.ratings = torch.tensor(df["normalized_rating"].values, dtype=torch.float32)
+        self.genres = torch.tensor(df[genres_cols].values, dtype=torch.float32)
+        self.is_training = is_training
+        self.user_dropout = user_dropout
+
+    def __len__(self) -> int:
+        return len(self.user_ids)
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        user_id = self.user_ids[idx]
+        if self.is_training and random.random() < self.user_dropout:
+            user_id = torch.tensor(0, dtype=torch.long)
+            
+        return {
+            "user_id": user_id,
+            "movie_id": self.movie_ids[idx],
+            "age": self.ages[idx],
+            "gender": self.genders[idx],
+            "job": self.jobs[idx],
+            "genres": self.genres[idx], 
+            "rating": self.ratings[idx],
+        }
