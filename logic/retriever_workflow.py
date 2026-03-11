@@ -44,13 +44,15 @@ def per_var_split_mask(
     return test_mask
 
 
-def per_var_temporal_split(
+def per_var_split(
         X: pd.DataFrame,
         var="user_id",
         time_col="timestamp",
+        temporal=False,
         max_test_ratio=0.1,
         test_max_per_var=8,
         test_min_per_var=3,
+        random_state=42,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """
         Split X and y to train and test such as for each value of var
@@ -58,8 +60,14 @@ def per_var_temporal_split(
         and each value of var receives max_test_ratio of records in test,
         capped at test_max_per_var.
     """
-    sort_indices = X.sort_values(by=[var, time_col]).index
-    X_sorted = X.loc[sort_indices]
+    if temporal:
+        sort_indices = X.sort_values(by=[var, time_col]).index
+        X_sorted = X.loc[sort_indices]
+    else:
+        X_shuffled = X.sample(frac=1.0, random_state=42)
+        sort_indices = X_shuffled.sort_values(by=[var]).index
+        X_sorted = X.loc[sort_indices]
+
     test_mask = per_var_split_mask(
         X_sorted, 
         var, 
@@ -95,6 +103,7 @@ def train_val_split(
     df: pd.DataFrame,
     user_col="user_id",
     time_col="timestamp",
+    temporal=False,
     cold_user_ratio=0.0,
     max_test_ratio=0.1,
     test_max_per_var=8,
@@ -109,10 +118,11 @@ def train_val_split(
         random_state,
     )
     
-    train_warm, val_warm = per_var_temporal_split(
+    train_warm, val_warm = per_var_split(
         X=warm_df,
         var=user_col,
         time_col=time_col,
+        temporal=temporal,
         max_test_ratio=max_test_ratio,
         test_max_per_var=test_max_per_var,
         test_min_per_var=test_min_per_var,
@@ -264,7 +274,7 @@ def _run_retrieval_epoch(
                 **loss_kwargs,
             )
             
-            if is_train and optimizer is not None:
+            if is_train:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -339,7 +349,7 @@ def train_retriever(
             all_genres=all_genres,
             device=device,
             cold_user_ids=cold_user_ids,
-            k=[recall_k],
+            ks=[recall_k],
         )[recall_k]["global"]
         
         print(
