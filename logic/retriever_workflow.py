@@ -374,7 +374,8 @@ def train_retriever_validate(
             no_improve_count = 0
         else:
             no_improve_count += 1
-            
+
+        print(f"No improvement for {no_improve_count} epochs")
         if no_improve_count >= patience:
             break
     
@@ -385,7 +386,7 @@ def train_retriever_validate(
             f"is {best_val_recall:.4f} achieved at epoch {best_epoch}."
         )
     
-    return best_weights
+    return best_weights, best_epoch
 
 
 def tune_retriever(
@@ -404,7 +405,7 @@ def tune_retriever(
     print("=== PHASE 2: Absorbing Validation Set ===")
     
     for param_group in optimizer.param_groups:
-        param_group["lr"] = param_group["lr"] * 0.5 
+        param_group["lr"] = param_group["lr"] * 0.1
 
     best_loss = np.inf
     no_improve_count = 0
@@ -466,7 +467,7 @@ def train_retriever(
         weight_decay=weight_decay,
     )
     
-    best_weights = train_retriever_validate(
+    best_weights, best_epoch = train_retriever_validate(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -488,10 +489,12 @@ def train_retriever(
     
     model.load_state_dict(best_weights)
 
+    val_ratio = len(val_loader.dataset) / len(train_loader.dataset)
+    tune_epochs = int(val_ratio * best_epoch)
+
     combined_dataset = ConcatDataset(
         [train_loader.dataset, val_loader.dataset]
     )
-    
     combined_loader = DataLoader(
         dataset=combined_dataset,
         batch_size=train_loader.batch_size,
@@ -506,7 +509,7 @@ def train_retriever(
         device=device,
         var_key_map=var_key_map,
         embedding_loss=embedding_loss,
-        epochs=epochs,
+        epochs=tune_epochs,
         tol=tol,
         patience=tuning_patience,
         **loss_kwargs,
