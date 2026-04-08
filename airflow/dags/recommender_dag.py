@@ -21,7 +21,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from logic.recommender_fm import split, find_best_model, fit_model, \
+from logic.recommender_fm import split, find_best_model, fit_model_final, \
                 count_baseline_score, FittedModel, ModelConfig
 
 
@@ -229,7 +229,7 @@ def recommender():
         X_test, y_test = joblib.load(test_path)
         X_all = pd.concat((*train_sets[:3], X_test))
         y_all = pd.concat((*train_sets[3:], y_test))
-        final_model = fit_model(X_all, y_all, final_config)
+        final_model = fit_model_final(X_all, y_all, final_config)
         joblib.dump(final_model, PRODUCTION_MODEL_PATH)
 
 

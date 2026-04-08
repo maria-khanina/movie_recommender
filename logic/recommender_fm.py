@@ -219,8 +219,8 @@ def find_best_fm_config(
             users=users_val,
         )
         val_score = estimator.score(
-            X_out_encoded, 
-            y_out, 
+            X_out_encoded,
+            y_out,
             users_out, 
         )
         if val_score > best_score:
@@ -283,7 +283,7 @@ def find_best_config(
     return best_score, best_config, transformer, best_estimator
 
 
-def fit_model(
+def fit_model_final(
         X: pd.DataFrame, 
         y: ArrayLike,
         config: ModelConfig,

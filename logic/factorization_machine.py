@@ -22,6 +22,7 @@ from scipy.sparse import csr_array, issparse, spmatrix, sparray, vstack
 
 dataset = ArrayLike | spmatrix | sparray
 array_func = Callable[[ArrayLike, ArrayLike], ArrayLike]
+eval_metric = Literal["neg_rmse", "mean_lowest_per_user", "ndcg"]
 
 
 def make_results_df(
@@ -130,11 +131,13 @@ class FactorizationMachine:
             learn_rate=0.01,
             loss: str | Callable[[ArrayLike, ArrayLike], float] = "mse",
             dloss_dpred: array_func | None = None,
-            metric: Literal["neg_rmse", "mean_lowest_per_user", "ndcg"] = "ndcg",
+            metric: eval_metric = "ndcg",
             weights_penalty=0,
             factors_penalty=0,
-            batch_size=1000,
+            batch_size=1024,
             patience=10,
+            eval_freq=5,
+            report_freq=20,
             random_state=None,
             verbose=False,
     ):
@@ -144,17 +147,19 @@ class FactorizationMachine:
         """
         self._init_loss(loss, dloss_dpred)
         self.metric = metric
-        self._factors_num = factors_num
+        self.factors_num = factors_num
         self.recommend_num = recommend_num
         self.max_epoch = max_epoch
         self.stop_epoch = max_epoch
         self.tol = tol
         self.learn_rate = learn_rate
         self.patience = patience
+        self.eval_freq = eval_freq
+        self.report_freq = report_freq
         self.batch_size = batch_size
         self.random_state = random_state
-        self._weights_penalty = weights_penalty
-        self._factors_penalty = factors_penalty
+        self.weights_penalty = weights_penalty
+        self.factors_penalty = factors_penalty
         self.verbose = verbose
         self.fitted_ = False
 
@@ -187,16 +192,16 @@ class FactorizationMachine:
         self._w0 = np.mean(y)
         self._weights = np.zeros(shape=(dim,), dtype=float)
 
-        init_std = np.sqrt(2.0 / (dim + self._factors_num))
+        init_std = np.sqrt(2.0 / (dim + self.factors_num))
         self._factors = rng.normal(
             scale=init_std, 
-            size=(dim, self._factors_num),
+            size=(dim, self.factors_num),
         )
         self._no_improvement_count = 0
         self._best_score = -np.inf
 
         self._squared_weight_grads = np.zeros(dim)
-        self._squared_factor_grads = np.zeros((dim, self._factors_num))
+        self._squared_factor_grads = np.zeros((dim, self.factors_num))
         self._squared_w0_grads = 0.0
 
     def _run_epoch(
@@ -235,7 +240,7 @@ class FactorizationMachine:
         )
 
         weights_grad = X_batch.T @ dloss_dpred \
-                    + 2 * self._weights_penalty * self._weights
+                    + 2 * self.weights_penalty * self._weights
         self._weights, self._squared_weight_grads = self._update_coef(
             self._weights, weights_grad, self._squared_weight_grads,
         )
@@ -245,29 +250,44 @@ class FactorizationMachine:
         factor_coef_1 = -(X_batch.T ** 2) @ dloss_dpred
         factors_grad = factor_coef_0 \
                         + factor_coef_1[:, np.newaxis] * self._factors \
-                        + 2 * self._factors_penalty * self._factors
+                        + 2 * self.factors_penalty * self._factors
 
         self._factors, self._squared_factor_grads = self._update_coef(
             self._factors, factors_grad, self._squared_factor_grads,
         )
 
-    def _is_converged(self, X_eval, y_eval, users=None):
+    def _check_improvement(
+            self,
+            X_eval,
+            y_eval,
+            users,
+    ) -> tuple[bool, bool]:
         """
-            Check if object's score didn't improve on more than tol for
-            patience amount of times in a row on separated evaluation set.
+            Check if object's score improved.
         """
         curr_score = self.score(X_eval, y_eval, users)
+        
+        is_score_best = curr_score > self._best_score
+        reset_patience = curr_score > self._best_score + self.tol
 
-        if curr_score > self._best_score + self.tol:
+        if is_score_best:
             self._best_score = curr_score
-            self._no_improvement_count = 0
-        else:
-            self._no_improvement_count += 1
 
-        if self._no_improvement_count >= self.patience:
-            return True
-        else:
-            return False
+        return is_score_best, reset_patience
+    
+    def _save_best_parameters(self, epoch: int) -> None:
+        """Save parameters at the best epoch."""
+        self._best_w0 = self._w0
+        self._best_weights = np.copy(self._weights)
+        self._best_factors = np.copy(self._factors)
+        self._best_epoch = epoch
+
+    def _restore_best_parameters(self) -> None:
+        """Restore the parameters to their best known state."""
+        self._w0 = self._best_w0
+        self._weights = self._best_weights
+        self._factors = self._best_factors
+        self.stop_epoch = self._best_epoch
 
     def fit(
             self,
@@ -286,30 +306,37 @@ class FactorizationMachine:
         rng = np.random.default_rng(seed=self.random_state)
 
         self._init_params(dim, y_train, rng)
-        best_epoch = self.stop_epoch
+        last_significant_epoch = 0
 
         for epoch in range(self.stop_epoch):
             self._run_epoch(X_train, y_train, n_samples, rng)
-            if eval_set is not None:
-                is_converged = self._is_converged(X_eval, y_eval, users)
-                if is_converged:
-                    best_epoch = epoch
+            if eval_set is not None and epoch % self.eval_freq == 0:
+                new_best, reset_patience = self._check_improvement(
+                    X_eval,
+                    y_eval,
+                    users,
+                )
+
+                if new_best:
+                    self._save_best_parameters(epoch)
+
+                if reset_patience:
+                    last_significant_epoch = epoch
+
+                if epoch - last_significant_epoch >= self.patience:
+                    print(f"---Early stopping triggered at epoch {epoch}.---")
                     break
 
-            if self.verbose == True and epoch % 20 == 0:
+            if self.verbose == True and epoch % self.report_freq == 0:
                 print(
-                    f"Epoch {epoch}, factors num {self._factors_num}, \n"
-                    f"factors abs mean: {np.mean(np.abs(self._factors))}, \n"
-                    f"weights abs mean: {np.mean(np.abs(self._weights))}, \n"
-                    f"intercept {self._w0},"
-                    f"best validation {self.metric} score {self._best_score}"
+                    f"Epoch {epoch + 1}, factors num {self.factors_num}, "
+                    f"factorc penalty {self.factors_penalty}, "
+                    f"factors abs mean: {np.mean(np.abs(self._factors)):.4f}.\n"
+                    f"Best validation {self.metric} score {self._best_score:.4f}"
                 )
 
         if eval_set is not None:
-            X_all = vstack([X_train, X_eval])
-            y_all = np.concatenate([y_train, y_eval])
-            self.stop_epoch = best_epoch
-            return self.fit(X_all, y_all, None, None)
+            self._restore_best_parameters()
 
         self.fitted_ = True
         return self
