@@ -23,7 +23,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 import scipy.sparse as sp
 
-from logic.factorization_machine import FactorizationMachine, ndcg_p_score
+from factorization_machine import FactorizationMachine, ndcg_p_score
 
 
 class ModelConfig(TypedDict):
