@@ -290,3 +290,28 @@ second as the target. At query time that never happens. In ML-1M 77% of ratings
 share their second with another rating of the same user (2.1 ratings per
 second on average). Added cuts_between_seconds: a window end inside a second
 moves back to the start of that second; the window length stays the same.
+
+### Run 10 — training cut rule and positions (2026-11-10)
+
+Sequence user tower with the feature movie tower, window 50, targets within 5
+ratings, everything else as in run 8. Two factors: position embedding on
+(SASRec) or off (transformer over the window as a set), and the training cut
+anywhere or only between seconds. Full tables:
+`reports/runs/2026-11-10_cut_rule_positions_split_c.md`. Recall@100 (bad@100):
+
+| Model | All known | Same day | Later day | New, 0 | New, 5 | New, 15 |
+|---|---|---|---|---|---|---|
+| SASRec, cut anywhere | 0.654 (0.483) | 0.666 | 0.414 | 0.365 | 0.396 | 0.738 |
+| SASRec, cut between seconds | 0.635 (0.467) | 0.647 | 0.379 | 0.374 | 0.397 | 0.741 |
+| no positions, cut anywhere | 0.621 (0.443) | 0.633 | 0.372 | 0.379 | 0.442 | 0.722 |
+| no positions, cut between seconds | 0.605 (0.424) | 0.617 | 0.365 | 0.381 | 0.404 | 0.714 |
+
+The cut anywhere trains better for both models (+0.019 and +0.016 on all known
+users, noise about 0.01), also on later-day users, whose validation never shares
+a session with the history. Ratings of the same second as the target are
+informative training input even though they never occur at query time; the
+evaluation stays honest either way because split C never puts a boundary inside
+a second. SASRec beats the model without positions by about 0.03 with either
+cut; for new users the two are within noise. Kept: SASRec, cut anywhere
+(cuts_between_seconds stays available, default off). The training variants of
+run 9 were already on this configuration; the rest are run on it next.
