@@ -337,3 +337,19 @@ days the effective sample (sum of weights squared over sum of squared weights)
 is 2% of the ratings, against 84% with 365 days. The rating age feature and
 window 100 are within noise of the base. Without the future-liked mask, later-day
 recall falls by 0.05 and bad recall rises by 0.02. Kept: the base.
+
+### Run 12 — SASRec architecture variants (2026-11-10)
+
+Base of run 10 (SASRec, feature movie tower, window 50, targets within 5,
+cut anywhere); one change per variant. Full tables:
+`reports/runs/2026-11-10_stage3_sasrec_architecture_split_c.md`. Recall@100
+(bad@100):
+
+| Variant | All known | Same day | Later day | New, 0 | New, 5 | New, 15 |
+|---|---|---|---|---|---|---|
+| base (run 10) | 0.654 (0.483) | 0.666 | 0.414 | 0.365 | 0.396 | 0.738 |
+| demographics concatenated to every token | 0.654 (0.482) | 0.666 | 0.411 | 0.376 | 0.397 | 0.733 |
+| percentile bucket (5) instead of raw rating | 0.650 (0.481) | 0.662 | 0.401 | 0.352 | 0.387 | 0.727 |
+
+Both are within noise of the base on every segment. Kept: the base, a separate
+demographics token and the raw rating.
