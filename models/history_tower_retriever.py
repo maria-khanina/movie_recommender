@@ -15,6 +15,8 @@ inside a second moves back to the start of that second, so, as at query time,
 every window rating is strictly earlier than the target. Other movies of the
 batch are the negatives, with the logQ correction; movies the user likes
 anywhere in the training history are never negatives of that user's rows.
+Optionally each example also gets one of the user's disliked movies as an
+explicit negative, weighted in the softmax (see disliked_negatives).
 In the liked-mean variant, a share of examples with at least the site's
 minimum history hide the user id, which teaches the tower to serve a new user
 from the history alone; the sequence tower has no user id at all. At query
@@ -31,10 +33,16 @@ import torch
 
 from dataset.movielens_tables import MovieLensTables
 from evaluation import evaluation_settings as columns
-from evaluation.percentile_gains import attach_percentile_gains
 from models import history_tower_settings as settings
 from models import two_tower_settings as tower_settings
 from models.candidate_retrieval import MovieIds, SearchResult
+from models.disliked_negatives import (
+    DislikedIndex,
+    DislikedNegatives,
+    draw_anywhere,
+    draw_nearby,
+    index_disliked,
+)
 from models.early_stopping import (
     StoppingData,
     StoppingTracker,
@@ -50,9 +58,11 @@ from models.history_encoders import (
 from models.rating_sequences import (
     HistoryWindow,
     RatedSequences,
+    RatingToken,
     SequencedRatings,
     build_rated_sequences,
     cut_windows,
+    mark_ratings,
 )
 from models.two_tower_features import (
     TowerFeatures,
@@ -73,11 +83,6 @@ class UserEncoder(enum.StrEnum):
     SEQUENCE = "sequence"
 
 
-class RatingToken(enum.StrEnum):
-    RAW = "raw rating"
-    PERCENTILE = "percentile bucket"
-
-
 class HistoryTowerConfig(NamedTuple):
     user_encoder: UserEncoder
     flat_movie_tower: bool
@@ -93,6 +98,8 @@ class HistoryTowerConfig(NamedTuple):
     cuts_between_seconds: bool
     rating_token: RatingToken
     concatenates_demographics: bool
+    disliked_negatives: DislikedNegatives
+    disliked_weight: float
 
 
 class _DifferentiableLoss(Protocol):
@@ -113,28 +120,7 @@ class _Examples(NamedTuple):
     liked_keys: torch.Tensor
     log_frequencies: torch.Tensor
     weights: torch.Tensor
-
-
-class _RatingMarks(NamedTuple):
-    liked: pandas.Series
-    codes: pandas.Series
-
-
-def _mark_ratings(
-    ratings: pandas.DataFrame,
-    config: HistoryTowerConfig,
-) -> _RatingMarks:
-    """Return, per rating, whether it is liked and its token code: the raw
-    rating, or 1 + the bucket of its percentile among the user's ratings.
-    """
-    gained = attach_percentile_gains(ratings, ratings)
-    percentiles = gained[columns.PERCENTILE_COLUMN]
-    liked = percentiles >= config.positive_threshold
-    if config.rating_token == RatingToken.RAW:
-        return _RatingMarks(liked, gained[columns.RATING_COLUMN])
-    buckets = numpy.floor(percentiles * settings.PERCENTILE_BUCKET_COUNT)
-    codes = buckets.clip(upper=settings.PERCENTILE_BUCKET_COUNT - 1) + 1
-    return _RatingMarks(liked, codes.astype(numpy.int64))
+    disliked: DislikedIndex
 
 
 def _count_log_frequencies(
@@ -184,6 +170,7 @@ def _build_examples(
             dtype=torch.float32,
             device=device,
         ),
+        disliked=index_disliked(sequenced.sequences),
     )
 
 
@@ -297,6 +284,32 @@ class HistoryTowerRetriever:
         is_liked = torch.isin(keys, examples.liked_keys)
         return is_liked & self._config.masks_future_liked
 
+    def _draw_disliked(
+        self,
+        examples: _Examples,
+        sequences: SequencedRatings,
+        batch_rows: tuple[torch.Tensor, torch.Tensor],
+        ends: torch.Tensor,
+    ) -> torch.Tensor:
+        user_rows, movie_rows = batch_rows
+        method = self._config.disliked_negatives
+        if method == DislikedNegatives.ANYWHERE:
+            return draw_anywhere(
+                sequences.sequences,
+                examples.disliked,
+                user_rows,
+                movie_rows,
+            )
+        if method == DislikedNegatives.NEARBY:
+            return draw_nearby(
+                sequences.sequences,
+                user_rows,
+                ends,
+                movie_rows,
+                self._config.target_window,
+            )
+        return movie_rows
+
     def _compute_batch_loss(
         self,
         examples: _Examples,
@@ -315,18 +328,23 @@ class HistoryTowerRetriever:
             ends,
             self._config.window_length,
         )
-        movie_vectors = self._encode_movies(movie_rows)
+        negative_rows = self._draw_disliked(
+            examples,
+            sequences,
+            (user_rows, movie_rows),
+            ends,
+        )
         vectors = BatchVectors(
             users=self._encode_users(user_rows, window, ends),
-            movies=movie_vectors,
-            negatives=movie_vectors,
+            movies=self._encode_movies(movie_rows),
+            negatives=self._encode_movies(negative_rows),
         )
-        rows = BatchRows(users=user_rows, movies=movie_rows, negatives=movie_rows)
+        rows = BatchRows(users=user_rows, movies=movie_rows, negatives=negative_rows)
         return compute_retrieval_loss(
             vectors,
             rows,
             examples.log_frequencies,
-            0.0,
+            self._config.disliked_weight,
             self._mask_liked_pairs(examples, user_rows, movie_rows),
             examples.weights[batch],
         )
@@ -407,7 +425,11 @@ class HistoryTowerRetriever:
             training,
             tower_settings.STOPPING_RATINGS_PER_USER,
         )
-        marks = _mark_ratings(stopping.fitting, self._config)
+        marks = mark_ratings(
+            stopping.fitting,
+            self._config.positive_threshold,
+            self._config.rating_token,
+        )
         liked_rows: numpy.typing.NDArray[numpy.bool_] = marks.liked.to_numpy()
         features = build_tower_features(
             stopping.fitting[liked_rows],
@@ -417,8 +439,7 @@ class HistoryTowerRetriever:
         self._features = features
         sequenced = build_rated_sequences(
             stopping.fitting,
-            marks.liked,
-            marks.codes,
+            marks,
             features,
             self._device,
         )
@@ -438,14 +459,12 @@ class HistoryTowerRetriever:
     ) -> SequencedRatings:
         _, _, features = self._require_model()
         queried = history[history[columns.USER_COLUMN].isin(user_ids)]
-        marks = _mark_ratings(queried, self._config)
-        return build_rated_sequences(
+        marks = mark_ratings(
             queried,
-            marks.liked,
-            marks.codes,
-            features,
-            self._device,
+            self._config.positive_threshold,
+            self._config.rating_token,
         )
+        return build_rated_sequences(queried, marks, features, self._device)
 
     def _encode_query_users(
         self,

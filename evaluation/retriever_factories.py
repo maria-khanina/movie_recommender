@@ -9,16 +9,17 @@ from collections.abc import Callable
 
 from evaluation import retriever_comparison_settings as comparison_settings
 from models.candidate_retrieval import CandidateRetriever
+from models.disliked_negatives import DislikedNegatives
 from models.factorization_machine import MachineConfig
 from models.factorization_machine_retriever import FactorizationMachineRetriever
 from models.history_tower_retriever import (
     HistoryTowerConfig,
     HistoryTowerRetriever,
-    RatingToken,
     UserEncoder,
 )
 from models.item_neighbors_retriever import ItemNeighborsRetriever
 from models.popularity_retriever import PopularityRetriever
+from models.rating_sequences import RatingToken
 from models.two_tower_retriever import TwoTowerRetriever
 
 RetrieverFactory = Callable[[], CandidateRetriever]
@@ -130,6 +131,8 @@ def _add_history_factory(
         cuts_between_seconds=False,
         rating_token=RatingToken.RAW,
         concatenates_demographics=False,
+        disliked_negatives=DislikedNegatives.NONE,
+        disliked_weight=0.0,
     )
     movie_side = "flat movie embeddings" if flat_movie_tower else "movie tower"
     name = f"{encoder} user tower, {movie_side}, {_describe_window(target_window)}"

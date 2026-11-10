@@ -6,6 +6,7 @@ from evaluation import evaluation_settings as settings
 from evaluation.rating_split import sort_ratings_by_time
 from models.rating_sequences import (
     HistoryWindow,
+    RatingMarks,
     SequencedRatings,
     build_rated_sequences,
     cut_windows,
@@ -52,8 +53,7 @@ def test_windows_hold_the_latest_ratings_before_the_end() -> None:
     liked = pandas.Series(numpy.ones(len(ratings), dtype=bool))
     sequenced = build_rated_sequences(
         ratings,
-        liked,
-        ratings[settings.RATING_COLUMN],
+        RatingMarks(liked, ~liked, ratings[settings.RATING_COLUMN]),
         features,
         torch.device("cpu"),
     )
@@ -77,8 +77,7 @@ def test_an_empty_history_gives_an_empty_window() -> None:
     liked = pandas.Series(numpy.ones(0, dtype=bool))
     sequenced = build_rated_sequences(
         empty,
-        liked,
-        empty[settings.RATING_COLUMN],
+        RatingMarks(liked, ~liked, empty[settings.RATING_COLUMN]),
         features,
         torch.device("cpu"),
     )
@@ -109,8 +108,7 @@ def test_second_starts_mark_the_first_rating_of_each_second() -> None:
     liked = pandas.Series(numpy.ones(len(ratings), dtype=bool))
     sequenced = build_rated_sequences(
         ratings,
-        liked,
-        ratings[settings.RATING_COLUMN],
+        RatingMarks(liked, ~liked, ratings[settings.RATING_COLUMN]),
         features,
         torch.device("cpu"),
     )

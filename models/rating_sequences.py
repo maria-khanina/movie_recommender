@@ -6,10 +6,12 @@ without Python loops. A window holds the last ratings strictly before a given
 position, padded on the left: the most recent rating is always in the last
 column. Each element keeps the movie code (catalog row plus one; 0 is padding),
 the rating code given by the caller (the raw rating or a bucket of its
-percentile) and whether the rating counts as liked on the user's own scale,
+percentile) and whether the rating counts as liked or as disliked on the
+user's own scale,
 plus the position of the first rating given in the same second, which lets a
 window end at a second boundary.
 """
+import enum
 from typing import NamedTuple
 
 import numpy
@@ -18,7 +20,9 @@ import pandas
 import torch
 
 from evaluation import evaluation_settings as columns
+from evaluation.percentile_gains import attach_percentile_gains
 from evaluation.rating_split import sort_ratings_by_time
+from models import history_tower_settings as settings
 from models.two_tower_features import TowerFeatures, find_rows
 
 
@@ -26,10 +30,42 @@ class RatedSequences(NamedTuple):
     movie_codes: torch.Tensor
     rating_codes: torch.Tensor
     liked: torch.Tensor
+    disliked: torch.Tensor
     timestamps: torch.Tensor
     second_starts: torch.Tensor
     starts: torch.Tensor
     lengths: torch.Tensor
+
+
+class RatingToken(enum.StrEnum):
+    RAW = "raw rating"
+    PERCENTILE = "percentile bucket"
+
+
+class RatingMarks(NamedTuple):
+    liked: pandas.Series
+    disliked: pandas.Series
+    codes: pandas.Series
+
+
+def mark_ratings(
+    ratings: pandas.DataFrame,
+    positive_threshold: float,
+    rating_token: RatingToken,
+) -> RatingMarks:
+    """Return, per rating, whether it is liked or disliked on the user's own
+    scale and its token code: the raw rating, or 1 + the bucket of its
+    percentile among the user's ratings.
+    """
+    gained = attach_percentile_gains(ratings, ratings)
+    percentiles = gained[columns.PERCENTILE_COLUMN]
+    liked = percentiles >= positive_threshold
+    disliked = percentiles < columns.BAD_PERCENTILE_THRESHOLD
+    if rating_token == RatingToken.RAW:
+        return RatingMarks(liked, disliked, gained[columns.RATING_COLUMN])
+    buckets = numpy.floor(percentiles * settings.PERCENTILE_BUCKET_COUNT)
+    codes = buckets.clip(upper=settings.PERCENTILE_BUCKET_COUNT - 1) + 1
+    return RatingMarks(liked, disliked, codes.astype(numpy.int64))
 
 
 class HistoryWindow(NamedTuple):
@@ -82,18 +118,18 @@ def _find_second_starts(
 
 def build_rated_sequences(
     ratings: pandas.DataFrame,
-    liked: pandas.Series,
-    rating_codes: pandas.Series,
+    marks: RatingMarks,
     features: TowerFeatures,
     device: torch.device,
 ) -> SequencedRatings:
     """Return the sequences of the given ratings and, per rating, its user row,
-    movie row and position in the user's sequence; liked and rating_codes are
-    aligned with ratings.
+    movie row and position in the user's sequence; marks are aligned with
+    ratings.
     """
     flagged = ratings.assign(
-        liked=liked.to_numpy(),
-        rating_code=rating_codes.to_numpy(),
+        liked=marks.liked.to_numpy(),
+        disliked=marks.disliked.to_numpy(),
+        rating_code=marks.codes.to_numpy(),
     )
     ordered, user_rows = _order_by_user_row(flagged, features)
     starts, lengths = _locate_users(user_rows, len(features.user_index))
@@ -108,6 +144,10 @@ def build_rated_sequences(
             device=device,
         ),
         liked=torch.as_tensor(liked_flags, device=device),
+        disliked=torch.as_tensor(
+            ordered["disliked"].to_numpy(dtype=numpy.bool_),
+            device=device,
+        ),
         timestamps=torch.as_tensor(timestamps, device=device),
         second_starts=torch.as_tensor(
             _find_second_starts(ordered, positions),
