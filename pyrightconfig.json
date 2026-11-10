@@ -1,0 +1,8 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.13",
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["dataset", "evaluation", "models", "tests"],
+  "exclude": ["tools", ".venv", "**/__pycache__"]
+}
