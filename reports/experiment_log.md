@@ -315,3 +315,25 @@ a second. SASRec beats the model without positions by about 0.03 with either
 cut; for new users the two are within noise. Kept: SASRec, cut anywhere
 (cuts_between_seconds stays available, default off). The training variants of
 run 9 were already on this configuration; the rest are run on it next.
+
+### Run 11 — remaining SASRec training variants (2026-11-10)
+
+SASRec user tower with the feature movie tower, window 50, targets within 5
+ratings, cut anywhere (the kept configuration of run 10); one change per
+variant. Full tables: `reports/runs/2026-11-10_stage2b_sasrec_variants_split_c.md`.
+Recall@100 (bad@100), base from run 10:
+
+| Variant | All known | Same day | Later day | New, 0 | New, 5 | New, 15 |
+|---|---|---|---|---|---|---|
+| base (run 10) | 0.654 (0.483) | 0.666 | 0.414 | 0.365 | 0.396 | 0.738 |
+| recency half-life 90 days | 0.324 (0.197) | 0.326 | 0.291 | 0.244 | 0.320 | 0.401 |
+| rating age feature | 0.653 (0.484) | 0.665 | 0.417 | 0.350 | 0.394 | 0.746 |
+| no future-liked mask | 0.645 (0.507) | 0.659 | 0.363 | 0.384 | 0.398 | 0.739 |
+| window 100 | 0.648 (0.471) | 0.659 | 0.400 | 0.360 | 0.392 | 0.753 |
+
+The half-life counts age from the latest rating of the whole dataset; 98% of
+ML-1M ratings are more than a year older than it (median 850 days), so with 90
+days the effective sample (sum of weights squared over sum of squared weights)
+is 2% of the ratings, against 84% with 365 days. The rating age feature and
+window 100 are within noise of the base. Without the future-liked mask, later-day
+recall falls by 0.05 and bad recall rises by 0.02. Kept: the base.

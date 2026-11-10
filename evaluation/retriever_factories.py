@@ -14,6 +14,7 @@ from models.factorization_machine_retriever import FactorizationMachineRetriever
 from models.history_tower_retriever import (
     HistoryTowerConfig,
     HistoryTowerRetriever,
+    RatingToken,
     UserEncoder,
 )
 from models.item_neighbors_retriever import ItemNeighborsRetriever
@@ -127,6 +128,8 @@ def _add_history_factory(
         user_weight_exponent=0.0,
         recency_half_life_days=0.0,
         cuts_between_seconds=False,
+        rating_token=RatingToken.RAW,
+        concatenates_demographics=False,
     )
     movie_side = "flat movie embeddings" if flat_movie_tower else "movie tower"
     name = f"{encoder} user tower, {movie_side}, {_describe_window(target_window)}"

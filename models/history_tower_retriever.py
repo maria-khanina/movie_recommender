@@ -73,6 +73,11 @@ class UserEncoder(enum.StrEnum):
     SEQUENCE = "sequence"
 
 
+class RatingToken(enum.StrEnum):
+    RAW = "raw rating"
+    PERCENTILE = "percentile bucket"
+
+
 class HistoryTowerConfig(NamedTuple):
     user_encoder: UserEncoder
     flat_movie_tower: bool
@@ -86,6 +91,8 @@ class HistoryTowerConfig(NamedTuple):
     user_weight_exponent: float
     recency_half_life_days: float
     cuts_between_seconds: bool
+    rating_token: RatingToken
+    concatenates_demographics: bool
 
 
 class _DifferentiableLoss(Protocol):
@@ -108,9 +115,26 @@ class _Examples(NamedTuple):
     weights: torch.Tensor
 
 
-def _flag_liked(ratings: pandas.DataFrame, threshold: float) -> pandas.Series:
+class _RatingMarks(NamedTuple):
+    liked: pandas.Series
+    codes: pandas.Series
+
+
+def _mark_ratings(
+    ratings: pandas.DataFrame,
+    config: HistoryTowerConfig,
+) -> _RatingMarks:
+    """Return, per rating, whether it is liked and its token code: the raw
+    rating, or 1 + the bucket of its percentile among the user's ratings.
+    """
     gained = attach_percentile_gains(ratings, ratings)
-    return gained[columns.PERCENTILE_COLUMN] >= threshold
+    percentiles = gained[columns.PERCENTILE_COLUMN]
+    liked = percentiles >= config.positive_threshold
+    if config.rating_token == RatingToken.RAW:
+        return _RatingMarks(liked, gained[columns.RATING_COLUMN])
+    buckets = numpy.floor(percentiles * settings.PERCENTILE_BUCKET_COUNT)
+    codes = buckets.clip(upper=settings.PERCENTILE_BUCKET_COUNT - 1) + 1
+    return _RatingMarks(liked, codes.astype(numpy.int64))
 
 
 def _count_log_frequencies(
@@ -190,6 +214,7 @@ class HistoryTowerRetriever:
             window_length=self._config.window_length,
             uses_positions=self._config.uses_positions,
             uses_rating_age=self._config.uses_rating_age,
+            concatenates_demographics=self._config.concatenates_demographics,
         )
         return SequenceUserTower(
             features.user_sizes,
@@ -382,12 +407,18 @@ class HistoryTowerRetriever:
             training,
             tower_settings.STOPPING_RATINGS_PER_USER,
         )
-        liked = _flag_liked(stopping.fitting, self._config.positive_threshold)
-        features = build_tower_features(stopping.fitting[liked], tables, self._device)
+        marks = _mark_ratings(stopping.fitting, self._config)
+        liked_rows: numpy.typing.NDArray[numpy.bool_] = marks.liked.to_numpy()
+        features = build_tower_features(
+            stopping.fitting[liked_rows],
+            tables,
+            self._device,
+        )
         self._features = features
         sequenced = build_rated_sequences(
             stopping.fitting,
-            liked,
+            marks.liked,
+            marks.codes,
             features,
             self._device,
         )
@@ -407,8 +438,14 @@ class HistoryTowerRetriever:
     ) -> SequencedRatings:
         _, _, features = self._require_model()
         queried = history[history[columns.USER_COLUMN].isin(user_ids)]
-        liked = _flag_liked(queried, self._config.positive_threshold)
-        return build_rated_sequences(queried, liked, features, self._device)
+        marks = _mark_ratings(queried, self._config)
+        return build_rated_sequences(
+            queried,
+            marks.liked,
+            marks.codes,
+            features,
+            self._device,
+        )
 
     def _encode_query_users(
         self,

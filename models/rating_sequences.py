@@ -5,7 +5,8 @@ and length, so a batch of windows is cut with index arithmetic on the device,
 without Python loops. A window holds the last ratings strictly before a given
 position, padded on the left: the most recent rating is always in the last
 column. Each element keeps the movie code (catalog row plus one; 0 is padding),
-the rating code and whether the rating counts as liked on the user's own scale,
+the rating code given by the caller (the raw rating or a bucket of its
+percentile) and whether the rating counts as liked on the user's own scale,
 plus the position of the first rating given in the same second, which lets a
 window end at a second boundary.
 """
@@ -82,13 +83,18 @@ def _find_second_starts(
 def build_rated_sequences(
     ratings: pandas.DataFrame,
     liked: pandas.Series,
+    rating_codes: pandas.Series,
     features: TowerFeatures,
     device: torch.device,
 ) -> SequencedRatings:
     """Return the sequences of the given ratings and, per rating, its user row,
-    movie row and position in the user's sequence; liked is aligned with ratings.
+    movie row and position in the user's sequence; liked and rating_codes are
+    aligned with ratings.
     """
-    flagged = ratings.assign(liked=liked.to_numpy())
+    flagged = ratings.assign(
+        liked=liked.to_numpy(),
+        rating_code=rating_codes.to_numpy(),
+    )
     ordered, user_rows = _order_by_user_row(flagged, features)
     starts, lengths = _locate_users(user_rows, len(features.user_index))
     movie_rows = find_rows(features.movie_index, ordered[columns.MOVIE_COLUMN])
@@ -98,7 +104,7 @@ def build_rated_sequences(
     sequences = RatedSequences(
         movie_codes=torch.as_tensor(movie_rows + 1, device=device),
         rating_codes=torch.as_tensor(
-            ordered[columns.RATING_COLUMN].to_numpy(dtype=numpy.int64),
+            ordered["rating_code"].to_numpy(dtype=numpy.int64),
             device=device,
         ),
         liked=torch.as_tensor(liked_flags, device=device),

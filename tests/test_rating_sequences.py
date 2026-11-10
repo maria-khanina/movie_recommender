@@ -50,7 +50,13 @@ def test_windows_hold_the_latest_ratings_before_the_end() -> None:
     ratings = generate_ratings()
     features = _build_features(ratings)
     liked = pandas.Series(numpy.ones(len(ratings), dtype=bool))
-    sequenced = build_rated_sequences(ratings, liked, features, torch.device("cpu"))
+    sequenced = build_rated_sequences(
+        ratings,
+        liked,
+        ratings[settings.RATING_COLUMN],
+        features,
+        torch.device("cpu"),
+    )
     for index in range(0, len(sequenced.user_rows), test_settings.WINDOW_CHECK_STEP):
         user_row = torch.as_tensor(sequenced.user_rows[index:index + 1])
         end = torch.as_tensor(sequenced.positions[index:index + 1])
@@ -69,7 +75,13 @@ def test_an_empty_history_gives_an_empty_window() -> None:
     features = _build_features(ratings)
     empty = ratings.iloc[:0]
     liked = pandas.Series(numpy.ones(0, dtype=bool))
-    sequenced = build_rated_sequences(empty, liked, features, torch.device("cpu"))
+    sequenced = build_rated_sequences(
+        empty,
+        liked,
+        empty[settings.RATING_COLUMN],
+        features,
+        torch.device("cpu"),
+    )
     user_rows = torch.zeros(1, dtype=torch.int64)
     ends = sequenced.sequences.lengths[user_rows]
     window = cut_windows(
@@ -95,7 +107,13 @@ def test_second_starts_mark_the_first_rating_of_each_second() -> None:
     ratings = generate_ratings()
     features = _build_features(ratings)
     liked = pandas.Series(numpy.ones(len(ratings), dtype=bool))
-    sequenced = build_rated_sequences(ratings, liked, features, torch.device("cpu"))
+    sequenced = build_rated_sequences(
+        ratings,
+        liked,
+        ratings[settings.RATING_COLUMN],
+        features,
+        torch.device("cpu"),
+    )
     timestamps = sequenced.sequences.timestamps
     flat_rows, first_rows = _locate_second_starts(sequenced)
     assert bool((timestamps[first_rows] == timestamps[flat_rows]).all())

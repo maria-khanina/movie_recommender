@@ -10,9 +10,12 @@
   gender and occupation. Transformer encoder layers with the normalization
   before each sublayer read the window, padding masked, and the output at the
   most recent rating (or at the user token, when the window is empty) is
-  projected to the user vector. It has no user id: everything it knows about a
-  user comes from the history and the demographics, so a new user is served as
-  soon as there are ratings.
+  projected to the user vector. With concatenated demographics there is no
+  user token: the demographics embedding is concatenated to every rating
+  token and projected back to the token size; an empty window is read as a
+  single token that holds the demographics alone. It has no user id:
+  everything it knows about a user comes from the history and the
+  demographics, so a new user is served as soon as there are ratings.
 
 Both return normalized vectors, comparable with the movie tower by cosine. The
 sequence tower's movie embedding can also serve as a flat movie tower, which
@@ -40,6 +43,7 @@ class SequenceOptions(NamedTuple):
     window_length: int
     uses_positions: bool
     uses_rating_age: bool
+    concatenates_demographics: bool
 
 
 class LikedMeanUserTower(torch.nn.Module):
@@ -112,6 +116,10 @@ class SequenceUserTower(torch.nn.Module):
             settings.SEQUENCE_DIMENSION,
             settings.SEQUENCE_DIMENSION,
         )
+        self.demographics_projection = torch.nn.Linear(
+            2 * settings.SEQUENCE_DIMENSION,
+            settings.SEQUENCE_DIMENSION,
+        )
 
     def _build_rating_embeddings(self, movie_sizes: MovieFeatureSizes) -> None:
         dimension = settings.SEQUENCE_DIMENSION
@@ -172,21 +180,49 @@ class SequenceUserTower(torch.nn.Module):
         )
         return user_token.unsqueeze(1)
 
-    def _build_tokens(self, users: UserInputs, window: HistoryWindow) -> torch.Tensor:
+    def _prepend_user_token(
+        self,
+        users: UserInputs,
+        window: HistoryWindow,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         user_token = self._embed_user(users)
         tokens = torch.cat([user_token, self._embed_ratings(window)], dim=1)
+        user_valid = torch.ones_like(window.valid[:, :1])
+        return tokens, torch.cat([user_valid, window.valid], dim=1)
+
+    def _concatenate_demographics(
+        self,
+        users: UserInputs,
+        window: HistoryWindow,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        ratings = self._embed_ratings(window)
+        demographics = self._embed_user(users).expand(-1, ratings.shape[1], -1)
+        joined = torch.cat([ratings, demographics], dim=2)
+        tokens: torch.Tensor = self.demographics_projection(joined)
+        valid = window.valid.clone()
+        valid[:, -1] = True
+        return tokens, valid
+
+    def _build_tokens(
+        self,
+        users: UserInputs,
+        window: HistoryWindow,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.options.concatenates_demographics:
+            tokens, valid = self._concatenate_demographics(users, window)
+        else:
+            tokens, valid = self._prepend_user_token(users, window)
         if not self.options.uses_positions:
-            return tokens
+            return tokens, valid
         positions = torch.arange(tokens.shape[1], device=tokens.device)
-        return tokens + self.position_embedding(positions).unsqueeze(0)
+        return tokens + self.position_embedding(positions).unsqueeze(0), valid
 
     def forward(self, users: UserInputs, window: HistoryWindow) -> torch.Tensor:
-        tokens = self._build_tokens(users, window)
-        user_valid = torch.ones_like(window.valid[:, :1])
-        padding = ~torch.cat([user_valid, window.valid], dim=1)
-        encoded: torch.Tensor = self.encoder(tokens, src_key_padding_mask=padding)
-        has_history = window.valid[:, -1:]
-        latest = torch.where(has_history, encoded[:, -1], encoded[:, 0])
+        tokens, valid = self._build_tokens(users, window)
+        encoded: torch.Tensor = self.encoder(tokens, src_key_padding_mask=~valid)
+        latest = encoded[:, -1]
+        if not self.options.concatenates_demographics:
+            latest = torch.where(window.valid[:, -1:], latest, encoded[:, 0])
         vectors: torch.Tensor = self.output_projection(latest)
         return torch.nn.functional.normalize(vectors, p=2.0, dim=1)
 
